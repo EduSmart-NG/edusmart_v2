@@ -9,19 +9,29 @@ datasource db {
   shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
 
-// Better Auth core models
+// Better Auth core models with additional fields
 model User {
   id            String   @id @default(cuid())
   name          String
   email         String   @unique
   emailVerified Boolean  @default(false)
   image         String?
+  username      String   @unique
+  dateOfBirth   DateTime
+  gender        Gender
+  phoneNumber   String?
+  address       String?  @db.Text
+  state         String
+  lga           String
+  schoolName    String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   sessions Session[]
   accounts Account[]
 
+  @@index([email])
+  @@index([username])
   @@map("user")
 }
 
@@ -32,11 +42,13 @@ model Session {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   ipAddress String?
-  userAgent String?
+  userAgent String?  @db.Text
   userId    String
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId])
+  @@index([token])
   @@map("session")
 }
 
@@ -58,6 +70,7 @@ model Account {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([providerId, accountId])
+  @@index([userId])
   @@map("account")
 }
 
@@ -70,5 +83,11 @@ model Verification {
   updatedAt  DateTime? @updatedAt
 
   @@unique([identifier, value])
+  @@index([value])
   @@map("verification")
+}
+
+enum Gender {
+  MALE
+  FEMALE
 }
