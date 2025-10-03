@@ -1,4 +1,4 @@
-export const nigerianStatesAndLGAs = [
+export const NIGERIAN_STATES_AND_LGAS = [
   {
     state: "Abia",
     lgas: [
