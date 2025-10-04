@@ -83,12 +83,12 @@ export function LoginForm({
 
     // Basic validation
     if (!formData.identifier.trim()) {
-      setErrors({ identifier: "Email or username is required" });
+      setErrors({ identifier: "Please enter your email address" });
       return;
     }
 
     if (!formData.password) {
-      setErrors({ password: "Password is required" });
+      setErrors({ password: "Please enter your password" });
       return;
     }
 
@@ -158,19 +158,17 @@ export function LoginForm({
     <div className={cn("flex flex-col gap-6", className)} {...props}>
       <Card>
         <CardHeader className="text-center">
-          <h1 className="text-xl font-bold">Welcome back</h1>
-          <CardDescription>
-            Login with your email or username and password
-          </CardDescription>
+          <h3>Welcome back</h3>
+          <CardDescription>Login with your email and password</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit}>
             <FieldGroup>
               <Field>
-                <FieldLabel htmlFor="identifier">Email or Username</FieldLabel>
+                <FieldLabel htmlFor="identifier">Email</FieldLabel>
                 <Input
                   id="identifier"
-                  placeholder="name@example.com or username"
+                  placeholder="name@example.com"
                   type="text"
                   autoCapitalize="none"
                   autoComplete="email"

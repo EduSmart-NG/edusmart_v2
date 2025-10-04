@@ -56,9 +56,13 @@ export const registerSchema = z.object({
     { message: "You must be between 5 and 100 years old" }
   ),
 
-  gender: z.enum(["MALE", "FEMALE"], {
-    error: "Gender must be either MALE or FEMALE",
-  }),
+  gender: z
+    .enum(["MALE", "FEMALE", ""], {
+      message: "Please select a gender",
+    })
+    .refine((val) => val !== "", {
+      message: "Please select your gender",
+    }),
 
   phoneNumber: z
     .string()
@@ -212,3 +216,58 @@ export const passwordResetSchema = z
   });
 
 export type PasswordResetInput = z.infer<typeof passwordResetSchema>;
+
+// ============================================================================
+// ✅ NEW FUNCTIONS ADDED BELOW - Password Reset Sanitization
+// ============================================================================
+
+/**
+ * Validate and sanitize password reset request input
+ *
+ * - Validates email format
+ * - Sanitizes email to prevent XSS
+ * - Normalizes to lowercase
+ *
+ * @param data - Raw password reset request input
+ * @returns Validated and sanitized data
+ * @throws ZodError if validation fails
+ */
+export function validateAndSanitizePasswordResetRequest(
+  data: PasswordResetRequestInput
+): PasswordResetRequestInput {
+  // Validate with Zod schema
+  const validated = passwordResetRequestSchema.parse(data);
+
+  // Sanitize email to prevent XSS
+  return {
+    email: DOMPurify.sanitize(validated.email),
+  };
+}
+
+/**
+ * Validate and sanitize password reset input
+ *
+ * - Validates token format
+ * - Validates password complexity
+ * - Validates password confirmation match
+ * - Does NOT sanitize password (preserve exact input)
+ * - Sanitizes token
+ *
+ * @param data - Raw password reset input
+ * @returns Validated and sanitized data
+ * @throws ZodError if validation fails
+ */
+export function validateAndSanitizePasswordReset(
+  data: PasswordResetInput
+): PasswordResetInput {
+  // Validate with Zod schema
+  const validated = passwordResetSchema.parse(data);
+
+  // Sanitize token to prevent XSS
+  // Do NOT sanitize password - preserve exact input for authentication
+  return {
+    token: DOMPurify.sanitize(validated.token),
+    password: validated.password,
+    confirmPassword: validated.confirmPassword,
+  };
+}

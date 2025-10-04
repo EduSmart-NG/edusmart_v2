@@ -1,0 +1,17 @@
+import { ForgotPasswordForm } from "@/components/auth/forgot-password";
+import { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Forgot Password | EduSmart",
+  description: "Reset your EduSmart account password",
+};
+
+export default function ForgotPasswordPage() {
+  return (
+    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
+      <div className="w-full max-w-sm">
+        <ForgotPasswordForm />
+      </div>
+    </div>
+  );
+}

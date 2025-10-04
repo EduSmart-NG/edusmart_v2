@@ -10,15 +10,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  ChevronDown,
-  Eye,
-  EyeOff,
-  CheckCircle,
-  Check,
-  X,
-  Loader2,
-} from "lucide-react";
+import { ChevronDown, Eye, EyeOff, Check, X, Loader2 } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
 import {
   Select,
@@ -59,7 +51,7 @@ export function RegisterForm() {
     password: "",
     confirmPassword: "",
     dateOfBirth: "",
-    gender: "MALE",
+    gender: "",
     phoneNumber: "",
     address: "",
     state: "",
@@ -214,9 +206,6 @@ export function RegisterForm() {
   return (
     <div className="flex flex-col gap-6 w-full max-w-4xl mx-auto">
       <div className="flex flex-col items-center gap-2 text-center">
-        <div className="bg-blue-100 text-blue-600 flex h-12 w-12 items-center justify-center rounded-full">
-          <CheckCircle className="h-6 w-6" />
-        </div>
         <h3 className="text-2xl font-semibold">Create an account</h3>
         <p className="text-gray-600 text-sm max-w-md">
           Enter your information to get started

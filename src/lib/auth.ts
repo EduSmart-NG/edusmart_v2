@@ -3,7 +3,7 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import { username } from "better-auth/plugins";
 import { nextCookies } from "better-auth/next-js";
 import prisma from "@/lib/prisma";
-import { sendVerificationEmail } from "@/lib/email";
+import { sendVerificationEmail, sendPasswordResetEmail } from "@/lib/email"; // ✅ ADDED: sendPasswordResetEmail
 import { redis } from "@/lib/redis";
 
 export const auth = betterAuth({
@@ -42,6 +42,30 @@ export const auth = betterAuth({
     requireEmailVerification: true,
     minPasswordLength: 8,
     maxPasswordLength: 128,
+    // ✅ ADDED: Password reset configuration
+    sendResetPassword: async ({ user, url }) => {
+      try {
+        await sendPasswordResetEmail(user.email, url);
+        console.log(`Password reset email sent to: ${user.email}`);
+      } catch (error) {
+        console.error("Failed to send password reset email:", error);
+        throw new Error("Failed to send password reset email");
+      }
+    },
+    // ✅ ADDED: Callback triggered after successful password reset
+    onPasswordReset: async ({ user }) => {
+      console.log(`Password successfully reset for user: ${user.email}`);
+
+      // Optional: Add additional security logging here
+      // Example: Log to audit trail, send notification email, etc.
+      // await logSecurityEvent({
+      //   userId: user.id,
+      //   event: "PASSWORD_RESET",
+      //   timestamp: new Date(),
+      // });
+    },
+    // ✅ ADDED: Token expiration time (1 hour = 3600 seconds)
+    resetPasswordTokenExpiresIn: 3600,
   },
 
   emailVerification: {
@@ -135,12 +159,12 @@ export const auth = betterAuth({
     additionalFields: {
       dateOfBirth: {
         type: "string",
-        required: false, // ✅ CHANGED: Optional for OAuth users
+        required: false, // Optional for OAuth users
         input: true,
       },
       gender: {
         type: "string",
-        required: false, // ✅ CHANGED: Optional for OAuth users
+        required: false, // Optional for OAuth users
         input: true,
       },
       phoneNumber: {
@@ -155,12 +179,12 @@ export const auth = betterAuth({
       },
       state: {
         type: "string",
-        required: false, // ✅ CHANGED: Optional for OAuth users
+        required: false, // Optional for OAuth users
         input: true,
       },
       lga: {
         type: "string",
-        required: false, // ✅ CHANGED: Optional for OAuth users
+        required: false, // Optional for OAuth users
         input: true,
       },
       schoolName: {
@@ -188,6 +212,15 @@ export const auth = betterAuth({
       "/send-verification-email": {
         window: 300,
         max: 3,
+      },
+      // ✅ ADDED: Rate limiting for password reset endpoints
+      "/forget-password": {
+        window: 300, // 5 minutes
+        max: 3, // 3 requests per 5 minutes
+      },
+      "/reset-password": {
+        window: 60, // 1 minute
+        max: 5, // 5 attempts per minute
       },
     },
   },
@@ -221,7 +254,7 @@ export const auth = betterAuth({
     },
   },
 
-  // ✅ UPDATED: Only validate required fields for email/password signups
+  // Only validate required fields for email/password signups
   databaseHooks: {
     user: {
       create: {
