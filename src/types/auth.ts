@@ -1,13 +1,18 @@
 import { Gender } from "@/generated/prisma";
 import type { RegisterInput } from "@/lib/validations/auth";
 
+/**
+ * User profile interface with all user fields
+ * Includes both username (normalized) and displayUsername (original casing)
+ */
 export interface UserProfile {
   id: string;
   name: string;
   email: string;
   emailVerified: boolean;
   image: string | null;
-  username: string;
+  username: string; // Normalized (lowercase) username
+  displayUsername: string; // ✅ ADDED: Original username with preserved casing
   dateOfBirth: Date;
   gender: Gender;
   phoneNumber: string | null;
@@ -19,40 +24,92 @@ export interface UserProfile {
   updatedAt: Date;
 }
 
+/**
+ * Registration form data with confirm password field
+ */
 export interface RegistrationFormData extends RegisterInput {
   confirmPassword?: string;
 }
 
+/**
+ * Registration response from server action
+ */
 export interface RegistrationResponse {
   success: boolean;
   message: string;
+  errors?: Record<string, string>;
   redirectTo?: string;
 }
 
+/**
+ * Form validation errors
+ */
 export interface FormErrors {
   [key: string]: string | undefined;
 }
 
+/**
+ * OAuth provider configuration
+ */
 export interface OAuthProvider {
   id: "google" | "facebook" | "tiktok";
   name: string;
   icon: string;
 }
 
+/**
+ * Available OAuth providers
+ */
 export const oAuthProviders: OAuthProvider[] = [
   { id: "google", name: "Google", icon: "google" },
   { id: "facebook", name: "Facebook", icon: "facebook" },
   { id: "tiktok", name: "TikTok", icon: "tiktok" },
 ];
 
+/**
+ * Location data for Nigerian states and LGAs
+ */
 export interface LocationData {
   state: string;
   lgas: string[];
 }
 
+/**
+ * Registration step configuration
+ */
 export interface RegistrationStep {
   id: number;
   title: string;
   description: string;
   fields: string[];
+}
+
+/**
+ * Username availability check result
+ */
+export interface UsernameAvailability {
+  available: boolean;
+  message?: string;
+}
+
+/**
+ * Session user data
+ */
+export interface SessionUser {
+  id: string;
+  name: string;
+  email: string;
+  emailVerified: boolean;
+  image: string | null;
+  username: string;
+  displayUsername: string; // ✅ ADDED: For displaying username with original casing
+}
+
+/**
+ * Auth context state
+ */
+export interface AuthContextState {
+  user: SessionUser | null;
+  isLoading: boolean;
+  isAuthenticated: boolean;
 }

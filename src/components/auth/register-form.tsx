@@ -27,7 +27,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Icons } from "@/components/icons";
 import { registerUser, checkUsernameAvailability } from "@/lib/actions/auth";
 import { registerSchema, type RegisterInput } from "@/lib/validations/auth";
 import { NIGERIAN_STATES_AND_LGAS } from "@/lib/utils/nigerianStates";
@@ -158,9 +157,10 @@ export function RegisterForm() {
 
     const result = registerSchema.safeParse(formData);
     if (!result.success) {
-      result.error.errors.forEach((error) => {
-        if (error.path[0]) {
-          newErrors[error.path[0].toString()] = error.message;
+      // ✅ FIXED: Use .issues instead of .errors (Zod v4)
+      result.error.issues.forEach((issue) => {
+        if (issue.path[0]) {
+          newErrors[issue.path[0].toString()] = issue.message;
         }
       });
     }
@@ -182,12 +182,12 @@ export function RegisterForm() {
     setIsLoading(true);
 
     try {
-      const { confirmPassword, ...registrationData } = formData;
+      const { ...registrationData } = formData;
       const result = await registerUser(registrationData);
 
       if (result.success) {
         toast.success(result.message);
-        router.push("/verify-email");
+        router.push("/auth/verify-email");
       } else {
         if (result.errors) {
           setErrors(result.errors);
@@ -271,10 +271,7 @@ export function RegisterForm() {
                     placeholder="johndoe"
                     value={formData.username}
                     onChange={(e) =>
-                      handleInputChange(
-                        "username",
-                        e.target.value.toLowerCase()
-                      )
+                      handleInputChange("username", e.target.value)
                     }
                     disabled={isLoading}
                     className="pr-10"
@@ -655,7 +652,7 @@ export function RegisterForm() {
           {/* Submit Button */}
           <Button
             onClick={handleSubmit}
-            className="w-full md:w-fit md:px-12 bg-blue-600 hover:bg-blue-700"
+            className="w-full md:w-fit md:px-12"
             disabled={isLoading}
           >
             {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

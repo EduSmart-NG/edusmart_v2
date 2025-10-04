@@ -1,12 +1,13 @@
 "use server";
 
 import { auth } from "@/lib/auth";
+import prisma from "@/lib/prisma";
 import {
   validateAndSanitizeRegistration,
   type RegisterInput,
 } from "@/lib/validations/auth";
-import { headers } from "next/headers";
-import { ZodError } from "zod";
+import { headers, cookies } from "next/headers";
+import { ZodError, type ZodIssue } from "zod";
 
 interface RegisterResult {
   success: boolean;
@@ -18,24 +19,17 @@ export async function registerUser(
   data: RegisterInput
 ): Promise<RegisterResult> {
   try {
-    // Validate and sanitize input
     const validatedData = validateAndSanitizeRegistration(data);
-
-    // Normalize username and email
-    const normalizedUsername = validatedData.username.toLowerCase().trim();
     const normalizedEmail = validatedData.email.toLowerCase().trim();
-
-    // Convert dateOfBirth string to ISO format for Better Auth
     const dateOfBirth = new Date(validatedData.dateOfBirth).toISOString();
 
-    // Register user via Better Auth
-    // Better Auth will handle duplicate checks automatically
     const result = await auth.api.signUpEmail({
       body: {
         name: validatedData.name,
         email: normalizedEmail,
         password: validatedData.password,
-        username: normalizedUsername,
+        username: validatedData.username,
+        displayUsername: validatedData.username,
         dateOfBirth,
         gender: validatedData.gender,
         phoneNumber: validatedData.phoneNumber || undefined,
@@ -43,6 +37,7 @@ export async function registerUser(
         state: validatedData.state,
         lga: validatedData.lga,
         schoolName: validatedData.schoolName || undefined,
+        callbackURL: "/auth/email-verified",
       },
       headers: await headers(),
     });
@@ -54,6 +49,9 @@ export async function registerUser(
       };
     }
 
+    // Set secure cookie to allow access to verify-email page
+    await setVerificationCookie(normalizedEmail);
+
     return {
       success: true,
       message:
@@ -62,7 +60,7 @@ export async function registerUser(
   } catch (error) {
     if (error instanceof ZodError) {
       const fieldErrors: Record<string, string> = {};
-      error.errors.forEach((err) => {
+      error.issues.forEach((err: ZodIssue) => {
         if (err.path[0]) {
           fieldErrors[err.path[0].toString()] = err.message;
         }
@@ -75,17 +73,14 @@ export async function registerUser(
       };
     }
 
-    // Handle Better Auth specific errors
     if (error instanceof Error) {
       console.error("Registration error:", error.message);
 
-      // Check for duplicate/unique constraint errors
       if (
         error.message.toLowerCase().includes("unique") ||
         error.message.toLowerCase().includes("duplicate") ||
         error.message.toLowerCase().includes("already exists")
       ) {
-        // Try to determine which field caused the error
         if (error.message.toLowerCase().includes("email")) {
           return {
             success: false,
@@ -121,62 +116,54 @@ export async function registerUser(
   }
 }
 
+// Enhanced secure cookie setting
+async function setVerificationCookie(email: string) {
+  const cookieStore = await cookies(); // Add await here
+  const expiryTime = new Date();
+  expiryTime.setMinutes(expiryTime.getMinutes() + 30); // 30 minutes expiry
+
+  const cookieData = {
+    email,
+    timestamp: new Date().toISOString(),
+    expires: expiryTime.toISOString(),
+  };
+
+  cookieStore.set("pending_verification", JSON.stringify(cookieData), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    maxAge: 30 * 60, // 30 minutes
+    path: "/",
+  });
+}
+
 export async function checkUsernameAvailability(
   username: string
 ): Promise<{ available: boolean }> {
   try {
-    if (!username || username.length < 3) {
+    if (!username || username.length < 3 || username.length > 30) {
       return { available: false };
     }
 
-    // MySQL is case-insensitive by default, so simple query works
+    if (!/^[a-zA-Z0-9_.]+$/.test(username)) {
+      return { available: false };
+    }
+
+    const reserved = ["admin", "root", "system", "support", "moderator"];
+    if (reserved.includes(username.toLowerCase())) {
+      return { available: false };
+    }
+
     const normalizedUsername = username.toLowerCase().trim();
 
-    // Use Better Auth to check if username exists
-    // This avoids direct Prisma queries and uses Better Auth's own logic
-    try {
-      const result = await auth.api.signUpEmail({
-        body: {
-          name: "temp",
-          email: `temp_${Date.now()}@temp.com`,
-          password: "Temp123!",
-          username: normalizedUsername,
-          dateOfBirth: new Date().toISOString(),
-          gender: "MALE",
-          state: "Lagos",
-          lga: "Ikeja",
-        },
-        headers: new Headers(),
-        // This is a dry-run check, we'll catch the error
-      });
+    const existingUser = await prisma.user.findUnique({
+      where: { username: normalizedUsername },
+      select: { id: true },
+    });
 
-      // If we got here, username is available (but we won't actually create the user)
-      return { available: true };
-    } catch {
-      // If error occurs, username might be taken or other validation failed
-      // For now, assume it's available to avoid false negatives
-      return { available: true };
-    }
+    return { available: !existingUser };
   } catch (error) {
-    console.error("Error checking username:", error);
-    // Default to available on error to avoid blocking registration
-    return { available: true };
-  }
-}
-
-export async function checkEmailAvailability(
-  email: string
-): Promise<{ available: boolean }> {
-  try {
-    if (!email || !email.includes("@")) {
-      return { available: false };
-    }
-
-    // MySQL is case-insensitive by default
-    // Default to available to avoid blocking registration
-    return { available: true };
-  } catch (error) {
-    console.error("Error checking email:", error);
-    return { available: true };
+    console.error("Username availability check error:", error);
+    return { available: false };
   }
 }

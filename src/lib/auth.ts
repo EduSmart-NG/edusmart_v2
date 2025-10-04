@@ -1,5 +1,6 @@
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
+import { username } from "better-auth/plugins"; // ✅ ADDED: Username plugin import
 import prisma from "@/lib/prisma";
 import { sendVerificationEmail } from "@/lib/email";
 import { redis } from "@/lib/redis";
@@ -14,6 +15,31 @@ export const auth = betterAuth({
   secret: process.env.BETTER_AUTH_SECRET,
 
   trustedOrigins: [process.env.BETTER_AUTH_URL || "http://localhost:3000"],
+
+  // ✅ ADDED: Plugins Configuration
+  plugins: [
+    username({
+      minUsernameLength: 3,
+      maxUsernameLength: 30,
+      // Custom username validator
+      usernameValidator: (username) => {
+        // Only allow alphanumeric characters, underscores, and dots
+        if (!/^[a-zA-Z0-9_.]+$/.test(username)) {
+          return false;
+        }
+        // Prevent reserved usernames
+        const reserved = ["admin", "root", "system", "support", "moderator"];
+        if (reserved.includes(username.toLowerCase())) {
+          return false;
+        }
+        return true;
+      },
+      // Username normalization to lowercase for case-insensitive lookups
+      usernameNormalization: (username) => username.toLowerCase().trim(),
+      // Don't normalize display username - preserve original casing
+      displayUsernameNormalization: false,
+    }),
+  ],
 
   // Email & Password Configuration
   emailAndPassword: {
@@ -45,11 +71,23 @@ export const auth = betterAuth({
       accessType: "offline",
       prompt: "consent",
       mapProfileToUser: (profile) => {
+        // ✅ ADDED: Generate username from email for OAuth users
+        const baseUsername = profile.email
+          .split("@")[0]
+          .replace(/[^a-zA-Z0-9]/g, "_")
+          .toLowerCase();
+
+        // Add random suffix to ensure uniqueness
+        const randomSuffix = Math.random().toString(36).substring(2, 7);
+        const generatedUsername = `${baseUsername}_${randomSuffix}`;
+
         return {
           email: profile.email,
           name: profile.name,
           image: profile.picture,
           emailVerified: profile.email_verified || false,
+          username: generatedUsername, // ✅ Generated username (normalized)
+          displayUsername: profile.name || baseUsername, // ✅ Use name as display
         };
       },
     },
@@ -59,29 +97,53 @@ export const auth = betterAuth({
       scope: ["email", "public_profile"],
       fields: ["id", "name", "email", "picture"],
       mapProfileToUser: (profile) => {
+        // ✅ ADDED: Generate username from email for OAuth users
+        const baseUsername =
+          profile.email
+            ?.split("@")[0]
+            .replace(/[^a-zA-Z0-9]/g, "_")
+            .toLowerCase() || "fbuser";
+
+        const randomSuffix = Math.random().toString(36).substring(2, 7);
+        const generatedUsername = `${baseUsername}_${randomSuffix}`;
+
         return {
           email: profile.email,
           name: profile.name,
           image: profile.picture?.data?.url,
           emailVerified: true,
+          username: generatedUsername,
+          displayUsername: profile.name || baseUsername,
         };
       },
     },
     tiktok: {
       clientKey: process.env.TIKTOK_CLIENT_KEY as string,
       clientSecret: process.env.TIKTOK_CLIENT_SECRET as string,
+      mapProfileToUser: (profile) => {
+        // ✅ ADDED: Generate username for TikTok users
+        const baseUsername = profile.username || "tiktokuser";
+        const randomSuffix = Math.random().toString(36).substring(2, 7);
+        const generatedUsername = `${baseUsername
+          .replace(/[^a-zA-Z0-9]/g, "_")
+          .toLowerCase()}_${randomSuffix}`;
+
+        return {
+          email: profile.email,
+          name: profile.display_name || profile.username,
+          image: profile.avatar_url,
+          emailVerified: true,
+          username: generatedUsername,
+          displayUsername: profile.display_name || profile.username,
+        };
+      },
     },
   },
 
   // User Additional Fields Configuration
   user: {
     additionalFields: {
-      username: {
-        type: "string",
-        required: true,
-        input: true,
-        unique: true,
-      },
+      // ✅ REMOVED: username - now handled by username plugin
       dateOfBirth: {
         type: "string",
         required: true,
@@ -179,21 +241,11 @@ export const auth = betterAuth({
     user: {
       create: {
         before: async (user) => {
-          // Additional server-side validation
-          const username = user.username as string | undefined;
-          const email = user.email as string | undefined;
+          // Additional server-side validation for custom fields
           const dateOfBirth = user.dateOfBirth as string | undefined;
           const gender = user.gender as string | undefined;
           const state = user.state as string | undefined;
           const lga = user.lga as string | undefined;
-
-          if (!username || username.length < 3) {
-            throw new Error("Username must be at least 3 characters");
-          }
-
-          if (!email || !email.includes("@")) {
-            throw new Error("Invalid email address");
-          }
 
           if (!dateOfBirth) {
             throw new Error("Date of birth is required");
@@ -203,15 +255,26 @@ export const auth = betterAuth({
             throw new Error("Valid gender is required");
           }
 
-          if (!state || !lga) {
-            throw new Error("State and LGA are required");
+          if (!state || state.length === 0) {
+            throw new Error("State is required");
           }
 
+          if (!lga || lga.length === 0) {
+            throw new Error("LGA is required");
+          }
+
+          // Validate age (must be at least 5 years old)
+          const dob = new Date(dateOfBirth);
+          const today = new Date();
+          const age = today.getFullYear() - dob.getFullYear();
+          if (age < 5 || age > 100) {
+            throw new Error("Invalid date of birth");
+          }
+
+          // ✅ FIXED: Return object with 'data' property as required by Better Auth
           return { data: user };
         },
       },
     },
   },
 });
-
-export type Session = typeof auth.$Infer.Session;
