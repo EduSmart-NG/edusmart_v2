@@ -3,6 +3,17 @@ import { NextRequest, NextResponse } from "next/server";
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Get session cookie to check if user is logged in
+  const sessionCookie = request.cookies.get("edusmart-session");
+  const isLoggedIn = !!sessionCookie?.value;
+
+  // ✅ ADDED: Redirect logged-in users away from auth pages
+  const authPages = ["/auth/login", "/auth/register", "/auth/forgot-password"];
+  if (isLoggedIn && authPages.includes(pathname)) {
+    const dashboardUrl = new URL("/dashboard", request.url);
+    return NextResponse.redirect(dashboardUrl);
+  }
+
   // Protect verify-email page
   if (pathname === "/verify-email" || pathname === "/auth/verify-email") {
     const pendingVerification = request.cookies.get("pending_verification");
@@ -39,7 +50,7 @@ export function middleware(request: NextRequest) {
     return response;
   }
 
-  // Protect email-verified page
+  // ✅ ADDED: Protect email-verified page
   if (pathname === "/auth/email-verified") {
     const url = request.nextUrl;
     const token = url.searchParams.get("token");
@@ -60,6 +71,22 @@ export function middleware(request: NextRequest) {
     return response;
   }
 
+  // ✅ ADDED: Protect reset-password page
+  if (pathname === "/auth/reset-password") {
+    const url = request.nextUrl;
+    const token = url.searchParams.get("token");
+
+    // Allow access only if there's a valid token parameter (coming from email link)
+    if (!token) {
+      const forgotPasswordUrl = new URL("/auth/forgot-password", request.url);
+      return NextResponse.redirect(forgotPasswordUrl);
+    }
+
+    const response = NextResponse.next();
+    addSecurityHeaders(response);
+    return response;
+  }
+
   // Apply security headers to all other routes
   const response = NextResponse.next();
   addSecurityHeaders(response);
@@ -76,13 +103,15 @@ function addSecurityHeaders(response: NextResponse) {
     "camera=(), microphone=(), geolocation=(), interest-cohort=()"
   );
 
+  // ✅ UPDATED: Add reCAPTCHA domains to CSP
   const cspHeader = `
     default-src 'self';
-    script-src 'self' 'unsafe-eval' 'unsafe-inline';
+    script-src 'self' 'unsafe-eval' 'unsafe-inline' https://www.google.com https://www.gstatic.com;
     style-src 'self' 'unsafe-inline';
     img-src 'self' blob: data: https:;
     font-src 'self' data:;
-    connect-src 'self' https://api.resend.com;
+    connect-src 'self' https://api.resend.com https://www.google.com;
+    frame-src https://www.google.com;
     frame-ancestors 'none';
     base-uri 'self';
     form-action 'self';
@@ -97,7 +126,11 @@ export const config = {
   matcher: [
     "/verify-email",
     "/auth/verify-email",
-    "/auth/email-verified", // Added protection for email-verified page
+    "/auth/email-verified",
+    "/auth/reset-password", // ✅ ADDED
+    "/auth/login", // ✅ ADDED
+    "/auth/register", // ✅ ADDED
+    "/auth/forgot-password", // ✅ ADDED
     "/((?!api|_next/static|_next/image|favicon.ico).*)",
   ],
 };

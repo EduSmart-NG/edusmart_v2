@@ -217,10 +217,6 @@ export const passwordResetSchema = z
 
 export type PasswordResetInput = z.infer<typeof passwordResetSchema>;
 
-// ============================================================================
-// ✅ NEW FUNCTIONS ADDED BELOW - Password Reset Sanitization
-// ============================================================================
-
 /**
  * Validate and sanitize password reset request input
  *

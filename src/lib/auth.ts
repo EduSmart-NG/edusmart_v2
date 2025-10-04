@@ -1,9 +1,9 @@
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
-import { username } from "better-auth/plugins";
+import { username, captcha } from "better-auth/plugins";
 import { nextCookies } from "better-auth/next-js";
 import prisma from "@/lib/prisma";
-import { sendVerificationEmail, sendPasswordResetEmail } from "@/lib/email"; // ✅ ADDED: sendPasswordResetEmail
+import { sendVerificationEmail, sendPasswordResetEmail } from "@/lib/email";
 import { redis } from "@/lib/redis";
 
 export const auth = betterAuth({
@@ -34,6 +34,18 @@ export const auth = betterAuth({
       usernameNormalization: (username) => username.toLowerCase().trim(),
       displayUsernameNormalization: false,
     }),
+    // ✅ ADDED: Google reCAPTCHA v3 bot protection
+    captcha({
+      provider: "google-recaptcha",
+      secretKey: process.env.RECAPTCHA_SECRET_KEY!,
+      minScore: 0.5, // Minimum score threshold (0.0-1.0, where 1.0 is very likely human)
+      endpoints: [
+        "/sign-up/email", // Protect registration
+        "/sign-in/email", // Protect login
+        "/forget-password", // Protect password reset request
+        // "/reset-password", // Optional: Uncomment to protect password reset
+      ],
+    }),
     nextCookies(), // MUST be last plugin in array
   ],
 
@@ -42,7 +54,6 @@ export const auth = betterAuth({
     requireEmailVerification: true,
     minPasswordLength: 8,
     maxPasswordLength: 128,
-    // ✅ ADDED: Password reset configuration
     sendResetPassword: async ({ user, url }) => {
       try {
         await sendPasswordResetEmail(user.email, url);
@@ -52,19 +63,9 @@ export const auth = betterAuth({
         throw new Error("Failed to send password reset email");
       }
     },
-    // ✅ ADDED: Callback triggered after successful password reset
     onPasswordReset: async ({ user }) => {
       console.log(`Password successfully reset for user: ${user.email}`);
-
-      // Optional: Add additional security logging here
-      // Example: Log to audit trail, send notification email, etc.
-      // await logSecurityEvent({
-      //   userId: user.id,
-      //   event: "PASSWORD_RESET",
-      //   timestamp: new Date(),
-      // });
     },
-    // ✅ ADDED: Token expiration time (1 hour = 3600 seconds)
     resetPasswordTokenExpiresIn: 3600,
   },
 
@@ -88,13 +89,11 @@ export const auth = betterAuth({
       accessType: "offline",
       prompt: "consent",
       mapProfileToUser: (profile) => {
-        // Generate username from email for OAuth users
         const baseUsername = profile.email
           .split("@")[0]
           .replace(/[^a-zA-Z0-9]/g, "_")
           .toLowerCase();
 
-        // Add random suffix to ensure uniqueness
         const randomSuffix = Math.random().toString(36).substring(2, 7);
         const generatedUsername = `${baseUsername}_${randomSuffix}`;
 
@@ -159,12 +158,12 @@ export const auth = betterAuth({
     additionalFields: {
       dateOfBirth: {
         type: "string",
-        required: false, // Optional for OAuth users
+        required: false,
         input: true,
       },
       gender: {
         type: "string",
-        required: false, // Optional for OAuth users
+        required: false,
         input: true,
       },
       phoneNumber: {
@@ -179,12 +178,12 @@ export const auth = betterAuth({
       },
       state: {
         type: "string",
-        required: false, // Optional for OAuth users
+        required: false,
         input: true,
       },
       lga: {
         type: "string",
-        required: false, // Optional for OAuth users
+        required: false,
         input: true,
       },
       schoolName: {
@@ -213,14 +212,13 @@ export const auth = betterAuth({
         window: 300,
         max: 3,
       },
-      // ✅ ADDED: Rate limiting for password reset endpoints
       "/forget-password": {
-        window: 300, // 5 minutes
-        max: 3, // 3 requests per 5 minutes
+        window: 300,
+        max: 3,
       },
       "/reset-password": {
-        window: 60, // 1 minute
-        max: 5, // 5 attempts per minute
+        window: 60,
+        max: 5,
       },
     },
   },
@@ -254,15 +252,12 @@ export const auth = betterAuth({
     },
   },
 
-  // Only validate required fields for email/password signups
   databaseHooks: {
     user: {
       create: {
         before: async (user) => {
-          // Check if this is an OAuth signup (OAuth users don't have password field)
           const isOAuthSignup = !user.password;
 
-          // Only validate required fields for email/password registration
           if (!isOAuthSignup) {
             const dateOfBirth = user.dateOfBirth as string | undefined;
             const gender = user.gender as string | undefined;

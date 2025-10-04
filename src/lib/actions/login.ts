@@ -1,7 +1,5 @@
 "use server";
 
-// export const runtime = "nodejs";
-
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { z } from "zod";
@@ -28,12 +26,16 @@ import { APIError } from "better-auth/api";
  * - Progressive delays on failed attempts
  * - Rate limiting via Better Auth
  * - Email verification enforcement
- * - Uses nextCookies plugin for automatic cookie handling
+ * - reCAPTCHA v3 bot protection
  *
  * @param data - Login credentials
+ * @param recaptchaToken - reCAPTCHA v3 token from client
  * @returns Login result with success status and error details
  */
-export async function loginUser(data: LoginInput): Promise<LoginResult> {
+export async function loginUser(
+  data: LoginInput,
+  recaptchaToken: string
+): Promise<LoginResult> {
   try {
     // Step 1: Validate and sanitize input
     const validatedData = validateAndSanitizeLogin(data);
@@ -55,15 +57,18 @@ export async function loginUser(data: LoginInput): Promise<LoginResult> {
     await applyProgressiveDelay(identifier);
 
     // Step 4: Attempt login with Better Auth
-    // Better Auth username plugin allows login with username OR email
-    // nextCookies plugin automatically handles cookie setting
+    // Better Auth automatically reads reCAPTCHA token from 'x-captcha-token' header
+    // We need to create headers with the token
+    const customHeaders = new Headers();
+    customHeaders.set("x-captcha-token", recaptchaToken);
+
     const result = await auth.api.signInEmail({
       body: {
         email: identifier, // Works for both email and username
         password,
         rememberMe,
       },
-      // ✅ NO headers() needed - nextCookies plugin handles this
+      headers: customHeaders,
     });
 
     // Step 5: Handle unsuccessful login
@@ -102,10 +107,23 @@ export async function loginUser(data: LoginInput): Promise<LoginResult> {
   } catch (error) {
     console.error("Login error:", error);
 
-    // Handle Better Auth API errors
+    // Handle Better Auth API errors including reCAPTCHA
     if (error instanceof APIError) {
       const errorMessage = error.message.toLowerCase();
       const errorStatus = error.status;
+
+      // Check for reCAPTCHA-specific errors
+      if (
+        errorMessage.includes("captcha") ||
+        errorMessage.includes("recaptcha") ||
+        errorMessage.includes("bot")
+      ) {
+        return {
+          success: false,
+          message: "Bot verification failed. Please try again.",
+          code: "INVALID_CREDENTIALS",
+        };
+      }
 
       // Email not verified (403)
       if (
@@ -273,13 +291,11 @@ export async function resendVerificationEmail(
     }
 
     // Use Better Auth to send verification email
-    // nextCookies plugin handles cookie setting automatically
     await auth.api.sendVerificationEmail({
       body: {
         email: validEmail,
         callbackURL: "/auth/email-verified",
       },
-      // ✅ NO headers() needed - nextCookies plugin handles this
     });
 
     return {
