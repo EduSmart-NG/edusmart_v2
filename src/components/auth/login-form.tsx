@@ -111,7 +111,7 @@ export function LoginForm({
 
         // Redirect after brief delay
         setTimeout(() => {
-          router.push(result.redirectTo || "/dashboard");
+          router.replace(result.redirectTo || "/dashboard");
         }, 500);
       } else {
         handleLoginError(result);

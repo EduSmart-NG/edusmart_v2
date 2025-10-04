@@ -1,10 +1,7 @@
 import { Resend } from "resend";
 
-// Only initialize Resend in production
-const resend =
-  process.env.NODE_ENV === "production"
-    ? new Resend(process.env.RESEND_API_KEY)
-    : null;
+// Initialize Resend with API key (works in both dev and prod)
+const resend = new Resend(process.env.RESEND_API_KEY || "re_development_key");
 
 interface EmailParams {
   to: string;
@@ -29,8 +26,8 @@ async function sendEmail({ to, subject, html }: EmailParams): Promise<void> {
   }
 
   // Send actual email in production
-  if (!resend) {
-    throw new Error("Resend is not initialized");
+  if (!process.env.RESEND_API_KEY) {
+    throw new Error("RESEND_API_KEY is not configured");
   }
 
   try {

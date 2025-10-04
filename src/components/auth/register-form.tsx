@@ -675,7 +675,7 @@ export function RegisterForm() {
       <div className="space-y-3">
         <p className="text-center text-sm text-gray-600">
           Already have an account?{" "}
-          <a href="/login" className="font-medium hover:underline">
+          <a href="/auth/login" className="font-medium hover:underline">
             Sign in
           </a>
         </p>
