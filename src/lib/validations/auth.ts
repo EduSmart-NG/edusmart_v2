@@ -118,14 +118,57 @@ export function validateAndSanitizeRegistration(
 }
 
 /**
- * Login validation schema
+ * Enhanced login validation schema
+ * Supports both email and username authentication
  */
 export const loginSchema = z.object({
-  email: z.string().email("Invalid email address").toLowerCase().trim(),
+  identifier: z
+    .string()
+    .min(1, "Email or username is required")
+    .refine(
+      (val) => {
+        // Valid if it's an email OR a valid username
+        const isEmail = z.string().email().safeParse(val).success;
+        const isUsername = /^[a-zA-Z0-9_.]+$/.test(val) && val.length >= 3;
+        return isEmail || isUsername;
+      },
+      {
+        message: "Please enter a valid email or username",
+      }
+    )
+    .transform((val) => val.toLowerCase().trim()),
+
   password: z.string().min(1, "Password is required"),
+
+  rememberMe: z.boolean().optional().default(true),
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;
+
+/**
+ * Validate and sanitize login input
+ *
+ * - Validates identifier (email or username)
+ * - Sanitizes identifier to prevent XSS
+ * - Does NOT sanitize password (preserve exact input)
+ * - Trims whitespace
+ *
+ * @param data - Raw login input
+ * @returns Validated and sanitized data
+ * @throws ZodError if validation fails
+ */
+export function validateAndSanitizeLogin(data: LoginInput): LoginInput {
+  // Validate with Zod schema
+  const validated = loginSchema.parse(data);
+
+  // Sanitize identifier (email/username) to prevent XSS
+  // Do NOT sanitize password - preserve exact input for authentication
+  return {
+    identifier: DOMPurify.sanitize(validated.identifier),
+    password: validated.password,
+    rememberMe: validated.rememberMe,
+  };
+}
 
 /**
  * Email verification schema

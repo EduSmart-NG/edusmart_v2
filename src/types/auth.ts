@@ -113,3 +113,56 @@ export interface AuthContextState {
   isLoading: boolean;
   isAuthenticated: boolean;
 }
+
+/**
+ * Login form data structure
+ */
+export interface LoginFormData {
+  identifier: string; // Email or username
+  password: string;
+  rememberMe: boolean;
+}
+
+/**
+ * Login error structure
+ */
+export interface LoginError {
+  field?: string;
+  message: string;
+}
+
+/**
+ * Login result from server action
+ */
+export interface LoginResult {
+  success: boolean;
+  message: string;
+  code?:
+    | "UNVERIFIED_EMAIL"
+    | "INVALID_CREDENTIALS"
+    | "RATE_LIMITED"
+    | "ACCOUNT_LOCKED"
+    | "UNKNOWN_ERROR";
+  errors?: Record<string, string>;
+  retryAfter?: number; // Seconds to wait before retry
+  redirectTo?: string;
+  userEmail?: string; // For resend verification
+}
+
+/**
+ * Account lockout data stored in Redis
+ */
+export interface AccountLockoutData {
+  attempts: number;
+  lastAttempt: string; // ISO timestamp
+  lockedUntil?: string; // ISO timestamp
+  isLocked: boolean;
+}
+
+/**
+ * Resend verification result
+ */
+export interface ResendVerificationResult {
+  success: boolean;
+  message: string;
+}

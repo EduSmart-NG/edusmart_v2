@@ -1,6 +1,10 @@
 import { Resend } from "resend";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Only initialize Resend in production
+const resend =
+  process.env.NODE_ENV === "production"
+    ? new Resend(process.env.RESEND_API_KEY)
+    : null;
 
 interface EmailParams {
   to: string;
@@ -25,6 +29,10 @@ async function sendEmail({ to, subject, html }: EmailParams): Promise<void> {
   }
 
   // Send actual email in production
+  if (!resend) {
+    throw new Error("Resend is not initialized");
+  }
+
   try {
     await resend.emails.send({
       from: process.env.EMAIL_FROM || "noreply@yourdomain.com",

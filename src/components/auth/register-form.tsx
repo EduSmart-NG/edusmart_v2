@@ -27,7 +27,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { registerUser, checkUsernameAvailability } from "@/lib/actions/auth";
+import {
+  registerUser,
+  checkUsernameAvailability,
+} from "@/lib/actions/register";
 import { registerSchema, type RegisterInput } from "@/lib/validations/auth";
 import { NIGERIAN_STATES_AND_LGAS } from "@/lib/utils/nigerianStates";
 import { toast } from "sonner";
@@ -45,6 +48,7 @@ export function RegisterForm() {
   const [selectedState, setSelectedState] = useState<string>("");
   const [availableLGAs, setAvailableLGAs] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
+  const [open, setOpen] = useState(false);
 
   const [formData, setFormData] = useState<
     RegisterInput & { confirmPassword: string }
@@ -145,6 +149,7 @@ export function RegisterForm() {
       setSelectedDate(date);
       const formattedDate = date.toISOString().split("T")[0];
       handleInputChange("dateOfBirth", formattedDate);
+      setOpen(false);
     }
   };
 
@@ -219,19 +224,6 @@ export function RegisterForm() {
       </div>
 
       <div className="bg-white px-4 md:px-8 py-6 rounded-lg border shadow-sm">
-        <OAuthButtons mode="signup" />
-
-        <div className="relative my-6">
-          <div className="absolute inset-0 flex items-center">
-            <span className="w-full border-t" />
-          </div>
-          <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-white px-2 text-gray-600">
-              Or continue with email
-            </span>
-          </div>
-        </div>
-
         <div className="flex flex-col gap-6">
           {/* Personal Information */}
           <div className="space-y-6">
@@ -348,7 +340,7 @@ export function RegisterForm() {
               <Label htmlFor="dateOfBirth">
                 Date of Birth <span className="text-red-500">*</span>
               </Label>
-              <Popover>
+              <Popover open={open} onOpenChange={setOpen}>
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
@@ -652,12 +644,30 @@ export function RegisterForm() {
           {/* Submit Button */}
           <Button
             onClick={handleSubmit}
-            className="w-full md:w-fit md:px-12"
+            className="w-full"
             disabled={isLoading}
           >
             {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Create Account
           </Button>
+
+          {/* OAuth Buttons*/}
+          <div className="pt-6 border-t">
+            <div className="relative mb-6">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-white px-2 text-gray-600">
+                  Or sign up with
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <OAuthButtons mode="signup" />
+            </div>
+          </div>
         </div>
       </div>
 
@@ -665,10 +675,7 @@ export function RegisterForm() {
       <div className="space-y-3">
         <p className="text-center text-sm text-gray-600">
           Already have an account?{" "}
-          <a
-            href="/login"
-            className="font-medium text-blue-600 hover:underline"
-          >
+          <a href="/login" className="font-medium hover:underline">
             Sign in
           </a>
         </p>
@@ -686,3 +693,5 @@ export function RegisterForm() {
     </div>
   );
 }
+
+export default RegisterForm;

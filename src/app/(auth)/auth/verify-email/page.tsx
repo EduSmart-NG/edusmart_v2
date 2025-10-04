@@ -51,7 +51,7 @@ export default function VerifyEmailPage() {
 
         <div className="flex flex-col space-y-2">
           <Button asChild variant="default">
-            <Link href="/login">Go to Login</Link>
+            <Link href="/auth/login">Go to Login</Link>
           </Button>
 
           <Button asChild variant="ghost">

@@ -1,6 +1,10 @@
+// src/lib/auth.ts
+// ADD nextCookies import and plugin
+
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
-import { username } from "better-auth/plugins"; // ✅ ADDED: Username plugin import
+import { username } from "better-auth/plugins";
+import { nextCookies } from "better-auth/next-js"; // ✅ ADD THIS IMPORT
 import prisma from "@/lib/prisma";
 import { sendVerificationEmail } from "@/lib/email";
 import { redis } from "@/lib/redis";
@@ -16,32 +20,28 @@ export const auth = betterAuth({
 
   trustedOrigins: [process.env.BETTER_AUTH_URL || "http://localhost:3000"],
 
-  // ✅ ADDED: Plugins Configuration
+  // ✅ UPDATED: Plugins Configuration - nextCookies MUST be last
   plugins: [
     username({
       minUsernameLength: 3,
       maxUsernameLength: 30,
-      // Custom username validator
       usernameValidator: (username) => {
-        // Only allow alphanumeric characters, underscores, and dots
         if (!/^[a-zA-Z0-9_.]+$/.test(username)) {
           return false;
         }
-        // Prevent reserved usernames
         const reserved = ["admin", "root", "system", "support", "moderator"];
         if (reserved.includes(username.toLowerCase())) {
           return false;
         }
         return true;
       },
-      // Username normalization to lowercase for case-insensitive lookups
       usernameNormalization: (username) => username.toLowerCase().trim(),
-      // Don't normalize display username - preserve original casing
       displayUsernameNormalization: false,
     }),
+    nextCookies(), // ✅ ADD THIS - MUST BE LAST PLUGIN IN ARRAY
   ],
 
-  // Email & Password Configuration
+  // Rest of your configuration remains the same...
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: true,
@@ -49,7 +49,6 @@ export const auth = betterAuth({
     maxPasswordLength: 128,
   },
 
-  // Email Verification Configuration
   emailVerification: {
     sendVerificationEmail: async ({ user, url }) => {
       try {
@@ -63,7 +62,6 @@ export const auth = betterAuth({
     autoSignInAfterVerification: false,
   },
 
-  // Social Providers Configuration
   socialProviders: {
     google: {
       clientId: process.env.GOOGLE_CLIENT_ID as string,
@@ -140,10 +138,8 @@ export const auth = betterAuth({
     },
   },
 
-  // User Additional Fields Configuration
   user: {
     additionalFields: {
-      // ✅ REMOVED: username - now handled by username plugin
       dateOfBirth: {
         type: "string",
         required: true,
@@ -182,29 +178,27 @@ export const auth = betterAuth({
     },
   },
 
-  // Rate Limiting Configuration
   rateLimit: {
     enabled: true,
-    window: 60, // 60 seconds
-    max: 100, // 100 requests per minute
+    window: 60,
+    max: 100,
     storage: "secondary-storage",
     customRules: {
       "/sign-up/email": {
         window: 60,
-        max: 5, // 5 registration attempts per minute per IP
+        max: 5,
       },
       "/sign-in/email": {
         window: 60,
-        max: 10, // 10 login attempts per minute per IP
+        max: 10,
       },
       "/send-verification-email": {
-        window: 300, // 5 minutes
-        max: 3, // 3 verification emails per 5 minutes
+        window: 300,
+        max: 3,
       },
     },
   },
 
-  // Secondary Storage (Redis) Configuration
   secondaryStorage: {
     get: async (key: string) => {
       return await redis.get(key);
@@ -217,17 +211,15 @@ export const auth = betterAuth({
     },
   },
 
-  // Session Configuration
   session: {
-    expiresIn: 60 * 60 * 24 * 7, // 7 days
-    updateAge: 60 * 60 * 24, // Update session every 24 hours
+    expiresIn: 60 * 60 * 24 * 7,
+    updateAge: 60 * 60 * 24,
     cookieCache: {
       enabled: true,
-      maxAge: 5 * 60, // Cache for 5 minutes
+      maxAge: 5 * 60,
     },
   },
 
-  // Advanced Security Configuration
   advanced: {
     useSecureCookies: process.env.NODE_ENV === "production",
     cookiePrefix: "edusmart",
@@ -236,12 +228,10 @@ export const auth = betterAuth({
     },
   },
 
-  // Database Hooks for Additional Validation
   databaseHooks: {
     user: {
       create: {
         before: async (user) => {
-          // Additional server-side validation for custom fields
           const dateOfBirth = user.dateOfBirth as string | undefined;
           const gender = user.gender as string | undefined;
           const state = user.state as string | undefined;
@@ -255,23 +245,14 @@ export const auth = betterAuth({
             throw new Error("Valid gender is required");
           }
 
-          if (!state || state.length === 0) {
+          if (!state) {
             throw new Error("State is required");
           }
 
-          if (!lga || lga.length === 0) {
+          if (!lga) {
             throw new Error("LGA is required");
           }
 
-          // Validate age (must be at least 5 years old)
-          const dob = new Date(dateOfBirth);
-          const today = new Date();
-          const age = today.getFullYear() - dob.getFullYear();
-          if (age < 5 || age > 100) {
-            throw new Error("Invalid date of birth");
-          }
-
-          // ✅ FIXED: Return object with 'data' property as required by Better Auth
           return { data: user };
         },
       },
