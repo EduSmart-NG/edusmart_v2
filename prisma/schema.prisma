@@ -11,29 +11,29 @@ datasource db {
 
 // Better Auth core models with additional fields
 model User {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   name            String
-  email           String   @unique
-  emailVerified   Boolean  @default(false)
+  email           String    @unique
+  emailVerified   Boolean   @default(false)
   image           String?
-  username        String   @unique
-  displayUsername String   @unique // ✅ ADDED: Preserves original username casing
-  dateOfBirth     DateTime
-  gender          Gender
+  username        String    @unique
+  displayUsername String    @unique
+  dateOfBirth     DateTime?
+  gender          Gender?
   phoneNumber     String?
-  address         String?  @db.Text
-  state           String
-  lga             String
+  address         String?   @db.Text
+  state           String?
+  lga             String?
   schoolName      String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   sessions Session[]
   accounts Account[]
 
   @@index([email])
   @@index([username])
-  @@index([displayUsername]) // ✅ ADDED: Index for performance
+  @@index([displayUsername])
   @@map("user")
 }
 
@@ -79,13 +79,13 @@ model Account {
 model Verification {
   id         String    @id @default(cuid())
   identifier String
-  value      String    @unique
+  value      String    @db.Text
   expiresAt  DateTime
   createdAt  DateTime? @default(now())
   updatedAt  DateTime? @updatedAt
 
-  @@unique([identifier, value])
-  @@index([value])
+  @@unique([identifier, value(length: 255)])
+  @@index([value(length: 255)])
   @@map("verification")
 }
 

@@ -1,10 +1,7 @@
-// src/lib/auth.ts
-// ADD nextCookies import and plugin
-
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { username } from "better-auth/plugins";
-import { nextCookies } from "better-auth/next-js"; // ✅ ADD THIS IMPORT
+import { nextCookies } from "better-auth/next-js";
 import prisma from "@/lib/prisma";
 import { sendVerificationEmail } from "@/lib/email";
 import { redis } from "@/lib/redis";
@@ -20,7 +17,6 @@ export const auth = betterAuth({
 
   trustedOrigins: [process.env.BETTER_AUTH_URL || "http://localhost:3000"],
 
-  // ✅ UPDATED: Plugins Configuration - nextCookies MUST be last
   plugins: [
     username({
       minUsernameLength: 3,
@@ -38,10 +34,9 @@ export const auth = betterAuth({
       usernameNormalization: (username) => username.toLowerCase().trim(),
       displayUsernameNormalization: false,
     }),
-    nextCookies(), // ✅ ADD THIS - MUST BE LAST PLUGIN IN ARRAY
+    nextCookies(), // MUST be last plugin in array
   ],
 
-  // Rest of your configuration remains the same...
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: true,
@@ -69,7 +64,7 @@ export const auth = betterAuth({
       accessType: "offline",
       prompt: "consent",
       mapProfileToUser: (profile) => {
-        // ✅ ADDED: Generate username from email for OAuth users
+        // Generate username from email for OAuth users
         const baseUsername = profile.email
           .split("@")[0]
           .replace(/[^a-zA-Z0-9]/g, "_")
@@ -84,8 +79,8 @@ export const auth = betterAuth({
           name: profile.name,
           image: profile.picture,
           emailVerified: profile.email_verified || false,
-          username: generatedUsername, // ✅ Generated username (normalized)
-          displayUsername: profile.name || baseUsername, // ✅ Use name as display
+          username: generatedUsername,
+          displayUsername: profile.name || baseUsername,
         };
       },
     },
@@ -95,7 +90,6 @@ export const auth = betterAuth({
       scope: ["email", "public_profile"],
       fields: ["id", "name", "email", "picture"],
       mapProfileToUser: (profile) => {
-        // ✅ ADDED: Generate username from email for OAuth users
         const baseUsername =
           profile.email
             ?.split("@")[0]
@@ -119,7 +113,6 @@ export const auth = betterAuth({
       clientKey: process.env.TIKTOK_CLIENT_KEY as string,
       clientSecret: process.env.TIKTOK_CLIENT_SECRET as string,
       mapProfileToUser: (profile) => {
-        // ✅ ADDED: Generate username for TikTok users
         const baseUsername = profile.username || "tiktokuser";
         const randomSuffix = Math.random().toString(36).substring(2, 7);
         const generatedUsername = `${baseUsername
@@ -142,12 +135,12 @@ export const auth = betterAuth({
     additionalFields: {
       dateOfBirth: {
         type: "string",
-        required: true,
+        required: false, // ✅ CHANGED: Optional for OAuth users
         input: true,
       },
       gender: {
         type: "string",
-        required: true,
+        required: false, // ✅ CHANGED: Optional for OAuth users
         input: true,
       },
       phoneNumber: {
@@ -162,12 +155,12 @@ export const auth = betterAuth({
       },
       state: {
         type: "string",
-        required: true,
+        required: false, // ✅ CHANGED: Optional for OAuth users
         input: true,
       },
       lga: {
         type: "string",
-        required: true,
+        required: false, // ✅ CHANGED: Optional for OAuth users
         input: true,
       },
       schoolName: {
@@ -228,29 +221,36 @@ export const auth = betterAuth({
     },
   },
 
+  // ✅ UPDATED: Only validate required fields for email/password signups
   databaseHooks: {
     user: {
       create: {
         before: async (user) => {
-          const dateOfBirth = user.dateOfBirth as string | undefined;
-          const gender = user.gender as string | undefined;
-          const state = user.state as string | undefined;
-          const lga = user.lga as string | undefined;
+          // Check if this is an OAuth signup (OAuth users don't have password field)
+          const isOAuthSignup = !user.password;
 
-          if (!dateOfBirth) {
-            throw new Error("Date of birth is required");
-          }
+          // Only validate required fields for email/password registration
+          if (!isOAuthSignup) {
+            const dateOfBirth = user.dateOfBirth as string | undefined;
+            const gender = user.gender as string | undefined;
+            const state = user.state as string | undefined;
+            const lga = user.lga as string | undefined;
 
-          if (!gender || !["MALE", "FEMALE"].includes(gender)) {
-            throw new Error("Valid gender is required");
-          }
+            if (!dateOfBirth) {
+              throw new Error("Date of birth is required");
+            }
 
-          if (!state) {
-            throw new Error("State is required");
-          }
+            if (!gender || !["MALE", "FEMALE"].includes(gender)) {
+              throw new Error("Valid gender is required");
+            }
 
-          if (!lga) {
-            throw new Error("LGA is required");
+            if (!state) {
+              throw new Error("State is required");
+            }
+
+            if (!lga) {
+              throw new Error("LGA is required");
+            }
           }
 
           return { data: user };
