@@ -24,6 +24,7 @@ import { loginUser, resendVerificationEmail } from "@/lib/actions/login";
 import type { LoginResult } from "@/types/auth";
 import Link from "next/link";
 import { OAuthButtons } from "./oauth-button";
+import { useRecaptchaToken } from "@/hooks/use-recaptcha-token";
 
 export function LoginForm({
   className,
@@ -32,6 +33,11 @@ export function LoginForm({
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const {
+    generateToken,
+    isLoading: isRecaptchaLoading,
+    error: recaptchaError,
+  } = useRecaptchaToken();
 
   const [formData, setFormData] = useState({
     identifier: "",
@@ -96,7 +102,19 @@ export function LoginForm({
     setErrors({});
 
     try {
-      const result: LoginResult = await loginUser(formData);
+      // Generate reCAPTCHA token before login
+      const recaptchaToken = await generateToken("signin");
+
+      if (!recaptchaToken) {
+        toast.error(
+          recaptchaError || "Failed to verify reCAPTCHA. Please try again."
+        );
+        setIsLoading(false);
+        return;
+      }
+
+      // Pass reCAPTCHA token via headers (Better Auth reads from x-captcha-token header)
+      const result: LoginResult = await loginUser(formData, recaptchaToken);
 
       if (result.success) {
         toast.success("Welcome back!", {
@@ -154,6 +172,9 @@ export function LoginForm({
     }
   };
 
+  // Combined loading state for button
+  const isSubmitting = isLoading || isRecaptchaLoading;
+
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
       <Card>
@@ -173,7 +194,7 @@ export function LoginForm({
                   autoCapitalize="none"
                   autoComplete="email"
                   autoCorrect="off"
-                  disabled={isLoading}
+                  disabled={isSubmitting}
                   value={formData.identifier}
                   onChange={(e) =>
                     handleInputChange("identifier", e.target.value)
@@ -205,7 +226,7 @@ export function LoginForm({
                     autoCapitalize="none"
                     autoComplete="current-password"
                     autoCorrect="off"
-                    disabled={isLoading}
+                    disabled={isSubmitting}
                     value={formData.password}
                     onChange={(e) =>
                       handleInputChange("password", e.target.value)
@@ -216,6 +237,7 @@ export function LoginForm({
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                    disabled={isSubmitting}
                   >
                     {showPassword ? (
                       <EyeOff className="h-4 w-4" />
@@ -237,6 +259,7 @@ export function LoginForm({
                     onCheckedChange={(checked) =>
                       handleInputChange("rememberMe", checked as boolean)
                     }
+                    disabled={isSubmitting}
                   />
                   <label
                     htmlFor="remember"
@@ -248,18 +271,21 @@ export function LoginForm({
               </Field>
 
               <Field>
-                <Button type="submit" className="w-full" disabled={isLoading}>
-                  {isLoading ? (
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Logging in...
+                      {isRecaptchaLoading ? "Verifying..." : "Logging in..."}
                     </>
                   ) : (
                     "Login"
                   )}
                 </Button>
 
-                {/* ✅ UPDATED: OAuth Section with proper divider and all providers */}
                 <div className="relative my-4">
                   <div className="absolute inset-0 flex items-center">
                     <span className="w-full border-t" />
@@ -271,7 +297,6 @@ export function LoginForm({
                   </div>
                 </div>
 
-                {/* ✅ ADDED: OAuthButtons component with all providers */}
                 <OAuthButtons mode="signin" />
 
                 <FieldDescription className="text-center mt-4">

@@ -16,6 +16,7 @@ import type {
 } from "@/types/auth";
 import { ZodError } from "zod";
 import { APIError } from "better-auth/api";
+import { headers } from "next/headers"; // ✅ ADDED: Import headers for reCAPTCHA
 
 /**
  * Rate limiting configuration for password reset requests
@@ -139,6 +140,7 @@ async function recordPasswordResetAttempt(
  * - Doesn't reveal if email exists (always returns success)
  * - Single-use tokens with 1 hour expiration
  * - Email includes security warnings
+ * - reCAPTCHA v3 bot protection ✅ NEW
  *
  * @param data - Password reset request data (email)
  * @returns Result with success status
@@ -193,11 +195,13 @@ export async function requestPasswordReset(
     }
 
     // Step 6: Send password reset email via Better Auth
+    // ✅ UPDATED: Now passes headers for reCAPTCHA validation
     await auth.api.forgetPassword({
       body: {
         email,
         redirectTo: "/auth/reset-password",
       },
+      headers: await headers(), // ✅ ADDED: Pass headers for reCAPTCHA validation
     });
 
     console.log(`Password reset email sent to: ${email}`);
@@ -220,8 +224,22 @@ export async function requestPasswordReset(
       };
     }
 
-    // Handle Better Auth API errors
+    // ✅ ENHANCED: Handle Better Auth API errors including reCAPTCHA
     if (error instanceof APIError) {
+      const errorMessage = error.message.toLowerCase();
+
+      // Check for reCAPTCHA-specific errors
+      if (
+        errorMessage.includes("captcha") ||
+        errorMessage.includes("recaptcha")
+      ) {
+        return {
+          success: false,
+          message: "Bot verification failed. Please try again.",
+          code: "UNKNOWN_ERROR",
+        };
+      }
+
       console.error("Better Auth API error:", error.message);
       // Don't expose internal errors to client
       return {
@@ -250,6 +268,7 @@ export async function requestPasswordReset(
  * - Password complexity enforcement
  * - Optional session revocation
  * - Security logging
+ * - reCAPTCHA v3 bot protection ✅ NEW (optional)
  *
  * @param data - Password reset data (token, new password)
  * @returns Result with success status
@@ -263,11 +282,13 @@ export async function resetPassword(
     const { token, password } = validatedData;
 
     // Step 2: Reset password via Better Auth
+    // ✅ UPDATED: Now passes headers for reCAPTCHA validation (if endpoint is protected)
     await auth.api.resetPassword({
       body: {
         token,
         newPassword: password,
       },
+      headers: await headers(), // ✅ ADDED: Pass headers for optional reCAPTCHA validation
     });
 
     console.log("Password reset successful for token");
@@ -283,7 +304,6 @@ export async function resetPassword(
 
     // Handle Zod validation errors
     if (error instanceof ZodError) {
-      // ✅ FIXED: Use 'issues' instead of 'errors'
       const firstIssue = error.issues[0];
       return {
         success: false,
@@ -292,10 +312,22 @@ export async function resetPassword(
       };
     }
 
-    // Handle Better Auth API errors
+    // ✅ ENHANCED: Handle Better Auth API errors including reCAPTCHA
     if (error instanceof APIError) {
       const errorMessage = error.message.toLowerCase();
       const errorStatus = error.status;
+
+      // Check for reCAPTCHA-specific errors
+      if (
+        errorMessage.includes("captcha") ||
+        errorMessage.includes("recaptcha")
+      ) {
+        return {
+          success: false,
+          message: "Bot verification failed. Please try again.",
+          code: "UNKNOWN_ERROR",
+        };
+      }
 
       // Token expired (400 or specific message)
       if (
