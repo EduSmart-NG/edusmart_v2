@@ -8,6 +8,7 @@ export const metadata: Metadata = {
   description: "Verify your email address to complete registration",
 };
 
+// Simple client component - middleware handles protection
 export default function VerifyEmailPage() {
   return (
     <div className="container flex h-screen w-screen flex-col items-center justify-center">
@@ -17,11 +18,9 @@ export default function VerifyEmailPage() {
             <Icons.alert className="h-10 w-10 text-primary" />
           </div>
 
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Check your email
-          </h1>
+          <h3>Check your email</h3>
 
-          <p className="text-sm text-muted-foreground">
+          <p>
             We&apos;ve sent you a verification link to complete your
             registration. Please check your email and click the verification
             link to activate your account.
@@ -30,7 +29,7 @@ export default function VerifyEmailPage() {
 
         <div className="rounded-lg border bg-card p-6 space-y-4">
           <div className="space-y-2">
-            <h3 className="font-medium">What&apos;s next?</h3>
+            <h4>What&apos;s next?</h4>
             <ol className="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
               <li>Check your email inbox (and spam folder)</li>
               <li>Click the verification link in the email</li>
