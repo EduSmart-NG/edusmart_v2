@@ -166,3 +166,38 @@ export interface ResendVerificationResult {
   success: boolean;
   message: string;
 }
+
+/**
+ * Password reset request result from server action
+ */
+export interface PasswordResetRequestResult {
+  success: boolean;
+  message: string;
+  code?: "EMAIL_SENT" | "RATE_LIMITED" | "INVALID_EMAIL" | "UNKNOWN_ERROR";
+  retryAfter?: number; // Seconds to wait before retry (for rate limiting)
+}
+
+/**
+ * Password reset result from server action
+ */
+export interface PasswordResetResult {
+  success: boolean;
+  message: string;
+  code?:
+    | "PASSWORD_RESET"
+    | "INVALID_TOKEN"
+    | "EXPIRED_TOKEN"
+    | "WEAK_PASSWORD"
+    | "UNKNOWN_ERROR";
+  redirectTo?: string; // URL to redirect after successful reset
+}
+
+/**
+ * Password reset rate limit data stored in Redis
+ */
+export interface PasswordResetRateLimitData {
+  attempts: number;
+  firstAttempt: string; // ISO timestamp
+  blockedUntil?: string; // ISO timestamp
+  isBlocked: boolean;
+}
