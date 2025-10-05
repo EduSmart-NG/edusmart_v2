@@ -34,17 +34,11 @@ export const auth = betterAuth({
       usernameNormalization: (username) => username.toLowerCase().trim(),
       displayUsernameNormalization: false,
     }),
-    // ✅ ADDED: Google reCAPTCHA v3 bot protection
     captcha({
       provider: "google-recaptcha",
       secretKey: process.env.RECAPTCHA_SECRET_KEY!,
-      minScore: 0.5, // Minimum score threshold (0.0-1.0, where 1.0 is very likely human)
-      endpoints: [
-        "/sign-up/email", // Protect registration
-        "/sign-in/email", // Protect login
-        "/forget-password", // Protect password reset request
-        // "/reset-password", // Optional: Uncomment to protect password reset
-      ],
+      minScore: 0.5,
+      endpoints: ["/sign-up/email", "/sign-in/email", "/forget-password"],
     }),
     nextCookies(), // MUST be last plugin in array
   ],
@@ -154,6 +148,7 @@ export const auth = betterAuth({
     },
   },
 
+  // ✅ ENHANCED: User management configuration
   user: {
     additionalFields: {
       dateOfBirth: {
@@ -192,8 +187,64 @@ export const auth = betterAuth({
         input: true,
       },
     },
+    // ✅ ADDED: Email change configuration
+    changeEmail: {
+      enabled: true,
+      sendChangeEmailVerification: async ({ user, url }) => {
+        try {
+          // Send verification to CURRENT email address for security
+          await sendVerificationEmail(user.email, url);
+          console.log(`Email change verification sent to: ${user.email}`);
+        } catch (error) {
+          console.error("Failed to send email change verification:", error);
+          throw new Error("Failed to send email change verification");
+        }
+      },
+    },
+    // ✅ ADDED: Account deletion configuration
+    deleteUser: {
+      enabled: true,
+      sendDeleteAccountVerification: async ({ user, url }) => {
+        try {
+          await sendVerificationEmail(user.email, url);
+          console.log(`Account deletion verification sent to: ${user.email}`);
+        } catch (error) {
+          console.error("Failed to send account deletion verification:", error);
+          throw new Error("Failed to send account deletion verification");
+        }
+      },
+      beforeDelete: async (user) => {
+        // Prevent admin account deletion
+        if (user.email.includes("admin@") || user.email.includes("support@")) {
+          throw new Error("Admin accounts cannot be deleted");
+        }
+
+        console.log(`Preparing to delete account: ${user.email}`);
+
+        // Additional cleanup can be added here
+        // Example: Delete user-uploaded files, cancel subscriptions, etc.
+      },
+      afterDelete: async (user) => {
+        console.log(`Account deleted successfully: ${user.email}`);
+
+        // Post-deletion cleanup
+        // Example: Remove from external services, send notification, etc.
+      },
+    },
   },
 
+  // ✅ ADDED: Account linking configuration
+  account: {
+    accountLinking: {
+      enabled: true,
+      trustedProviders: ["google"], // Auto-link verified Google accounts
+      allowDifferentEmails: false, // Require matching emails for security
+      updateUserInfoOnLink: true, // Update user info when linking accounts
+      allowUnlinkingAll: false, // Prevent unlinking last account (avoid lockout)
+    },
+  },
+
+  // ✅ ENHANCED: Rate limiting with stricter rules for sensitive operations
   rateLimit: {
     enabled: true,
     window: 60,
@@ -220,6 +271,31 @@ export const auth = betterAuth({
         window: 60,
         max: 5,
       },
+      // ✅ ADDED: Rate limits for user management endpoints
+      "/update-user": {
+        window: 60,
+        max: 10,
+      },
+      "/change-email": {
+        window: 300,
+        max: 3,
+      },
+      "/change-password": {
+        window: 60,
+        max: 5,
+      },
+      "/delete-user": {
+        window: 300,
+        max: 1, // Very strict for account deletion
+      },
+      "/revoke-session": {
+        window: 60,
+        max: 10,
+      },
+      "/revoke-sessions": {
+        window: 60,
+        max: 5,
+      },
     },
   },
 
@@ -235,20 +311,51 @@ export const auth = betterAuth({
     },
   },
 
+  // ✅ ENHANCED: Session configuration with cookie cache
   session: {
-    expiresIn: 60 * 60 * 24 * 7,
-    updateAge: 60 * 60 * 24,
+    expiresIn: 60 * 60 * 24 * 7, // 7 days
+    updateAge: 60 * 60 * 24, // 1 day - refresh session after this age
+    freshAge: 60 * 60 * 24, // 1 day - session considered fresh for sensitive operations
     cookieCache: {
       enabled: true,
-      maxAge: 5 * 60,
+      maxAge: 5 * 60, // 5 minutes - cache session data in cookie
     },
   },
 
+  // ✅ ENHANCED: Advanced security configuration
   advanced: {
     useSecureCookies: process.env.NODE_ENV === "production",
     cookiePrefix: "edusmart",
+
+    // Cross-subdomain cookies (disabled by default for security)
     crossSubDomainCookies: {
       enabled: false,
+      // domain: ".yourdomain.com", // Uncomment and set if needed
+    },
+
+    // ✅ ADDED: IP address detection for rate limiting and security
+    ipAddress: {
+      ipAddressHeaders: ["x-forwarded-for", "x-real-ip", "cf-connecting-ip"],
+    },
+
+    // ✅ ADDED: Custom cookie configuration for better security
+    cookies: {
+      session_token: {
+        name: "session_token",
+        attributes: {
+          sameSite: "lax",
+          secure: process.env.NODE_ENV === "production",
+          httpOnly: true,
+        },
+      },
+      session_data: {
+        name: "session_data",
+        attributes: {
+          sameSite: "lax",
+          secure: process.env.NODE_ENV === "production",
+          httpOnly: true,
+        },
+      },
     },
   },
 
