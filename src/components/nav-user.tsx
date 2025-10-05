@@ -26,25 +26,16 @@ import {
 } from "@/components/ui/sidebar";
 import { authClient } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
+import { SessionData } from "@/types/user-management";
 
-/**
- * NavUser Component
- *
- * Displays user information in the sidebar with a dropdown menu.
- * Uses Better Auth's useSession hook for real-time user data.
- *
- * Features:
- * - Real-time session updates
- * - User avatar with fallback initials
- * - Dropdown menu with navigation options
- * - Sign out functionality
- */
-export function NavUser() {
+interface NavUserProps {
+  session: SessionData | null;
+  isPending: boolean;
+}
+
+export function NavUser({ session, isPending }: NavUserProps) {
   const { isMobile } = useSidebar();
   const router = useRouter();
-
-  // Get session from Better Auth
-  const { data: session, isPending } = authClient.useSession();
 
   // Handle sign out
   const handleSignOut = async () => {

@@ -108,7 +108,10 @@ export async function updateUserProfile(
 
     // Better Auth expects dateOfBirth as string, not Date
     if (data.dateOfBirth) {
-      bodyData.dateOfBirth = data.dateOfBirth.toISOString().split("T")[0];
+      // Convert to full DateTime by adding midnight UTC time
+      bodyData.dateOfBirth = new Date(
+        data.dateOfBirth.toISOString().split("T")[0] + "T00:00:00.000Z"
+      );
     }
 
     // Gender is already a string

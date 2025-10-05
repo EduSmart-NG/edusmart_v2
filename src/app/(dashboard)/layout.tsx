@@ -2,6 +2,9 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import type { ReactNode } from "react";
+import { AppSidebar } from "@/components/app-sidebar";
+import { SiteHeader } from "@/components/site-header";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 
 /**
  * Dashboard Layout - Server Component
@@ -58,5 +61,22 @@ export default async function DashboardLayout({
   // Session is valid - render dashboard
   // The user object is available at: session.user
   // The session object is available at: session.session
-  return <>{children}</>;
+  return (
+    <>
+      <SidebarProvider
+        style={
+          {
+            "--sidebar-width": "calc(var(--spacing) * 72)",
+            "--header-height": "calc(var(--spacing) * 12)",
+          } as React.CSSProperties
+        }
+      >
+        <AppSidebar variant="inset" />
+        <SidebarInset>
+          <SiteHeader />
+          <div className="p-8 sm:p-12">{children}</div>
+        </SidebarInset>
+      </SidebarProvider>
+    </>
+  );
 }

@@ -182,7 +182,7 @@ h3 {
   letter-spacing: -0.025em;
 }
 
-h4 {
+h4, .dialog-title {
   scroll-margin-top: 5rem;
   font-size: 1.25rem; /* 20px */
   letter-spacing: -0.025em;
