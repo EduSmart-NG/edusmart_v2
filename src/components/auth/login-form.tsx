@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,6 +31,11 @@ export function LoginForm({
   ...props
 }: React.ComponentProps<"div">) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // ✅ NEW: Get callback URL from query params (set by middleware)
+  const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
+
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const {
@@ -121,8 +126,9 @@ export function LoginForm({
           description: "You have successfully logged in.",
         });
 
-        // Redirect to dashboard or specified location
-        router.push(result.redirectTo || "/dashboard");
+        // ✅ UPDATED: Use callbackUrl from middleware, fallback to result.redirectTo or /dashboard
+        const redirectPath = result.redirectTo || callbackUrl;
+        router.push(redirectPath);
         router.refresh();
       } else {
         // Handle different error types
@@ -292,7 +298,7 @@ export function LoginForm({
                   </div>
                   <div className="relative flex justify-center text-xs uppercase">
                     <span className="bg-background px-2 text-muted-foreground">
-                      Or continue with
+                      Or
                     </span>
                   </div>
                 </div>

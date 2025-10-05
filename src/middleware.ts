@@ -1,31 +1,91 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getSessionCookie } from "better-auth/cookies";
 
+/**
+ * Next.js Middleware for route protection
+ *
+ * Security Layers:
+ * 1. Middleware (this file) - Fast, optimistic cookie-based checks
+ * 2. Server Components - Full session validation with Better Auth API
+ *
+ * IMPORTANT: This middleware only checks for session cookie existence.
+ * Full session validation happens in Server Components (layouts).
+ *
+ * @see https://www.better-auth.com/docs/integrations/next#middleware
+ * @see https://nextjs.org/docs/app/guides/authentication
+ */
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Get session cookie to check if user is logged in
-  const sessionCookie = request.cookies.get("edusmart-session");
-  const isLoggedIn = !!sessionCookie?.value;
+  /**
+   * Check for Better Auth session cookie
+   *
+   * IMPORTANT: Cookie configuration must match auth.ts exactly!
+   *
+   * From your auth.ts:
+   * - cookiePrefix: "edusmart" (NOT applied to custom cookie names)
+   * - cookies.session_token.name: "session_token"
+   *
+   * Actual cookie name in browser: "session_token" (NOT "edusmart-session_token")
+   *
+   * Why? Better Auth does NOT automatically prefix custom cookie names.
+   * The cookiePrefix is only used for default cookies.
+   *
+   * @see https://www.better-auth.com/docs/concepts/cookies
+   */
+  const sessionCookie = getSessionCookie(request, {
+    cookiePrefix: "", // Empty because we're using custom cookie names
+    cookieName: "session_token", // Matches auth.ts cookies.session_token.name
+  });
 
-  // ✅ ADDED: Redirect logged-in users away from auth pages
+  const isAuthenticated = !!sessionCookie;
+
+  // =====================================================
+  // PROTECT DASHBOARD ROUTES
+  // =====================================================
+  if (pathname.startsWith("/dashboard")) {
+    if (!isAuthenticated) {
+      const loginUrl = new URL("/auth/login", request.url);
+
+      // Preserve the intended destination for redirect after login
+      loginUrl.searchParams.set("callbackUrl", pathname);
+
+      return NextResponse.redirect(loginUrl);
+    }
+
+    // User has session cookie, allow through
+    // Full validation will happen in dashboard layout (Server Component)
+    const response = NextResponse.next();
+    addSecurityHeaders(response);
+    return response;
+  }
+
+  // =====================================================
+  // REDIRECT AUTHENTICATED USERS FROM AUTH PAGES
+  // =====================================================
   const authPages = ["/auth/login", "/auth/register", "/auth/forgot-password"];
-  if (isLoggedIn && authPages.includes(pathname)) {
+  if (isAuthenticated && authPages.includes(pathname)) {
     const dashboardUrl = new URL("/dashboard", request.url);
     return NextResponse.redirect(dashboardUrl);
   }
 
-  // Protect verify-email page
+  // =====================================================
+  // PROTECT EMAIL VERIFICATION PAGE
+  // =====================================================
   if (pathname === "/verify-email" || pathname === "/auth/verify-email") {
     const pendingVerification = request.cookies.get("pending_verification");
 
     if (!pendingVerification?.value) {
-      const loginUrl = new URL("/auth/register", request.url);
-      return NextResponse.redirect(loginUrl);
+      const registerUrl = new URL("/auth/register", request.url);
+      return NextResponse.redirect(registerUrl);
     }
 
     // Validate cookie format and expiry
     try {
-      const cookieData = JSON.parse(pendingVerification.value);
+      const cookieData = JSON.parse(pendingVerification.value) as {
+        email: string;
+        expires: string;
+      };
       const expiryTime = new Date(cookieData.expires);
 
       if (expiryTime < new Date()) {
@@ -50,7 +110,9 @@ export function middleware(request: NextRequest) {
     return response;
   }
 
-  // ✅ ADDED: Protect email-verified page
+  // =====================================================
+  // PROTECT EMAIL VERIFIED PAGE
+  // =====================================================
   if (pathname === "/auth/email-verified") {
     const url = request.nextUrl;
     const token = url.searchParams.get("token");
@@ -58,8 +120,8 @@ export function middleware(request: NextRequest) {
 
     // Allow access only if there's a token or error parameter (coming from email link)
     if (!token && !error) {
-      const loginUrl = new URL("/auth/register", request.url);
-      return NextResponse.redirect(loginUrl);
+      const registerUrl = new URL("/auth/register", request.url);
+      return NextResponse.redirect(registerUrl);
     }
 
     // Clear pending verification cookie on successful access
@@ -71,7 +133,9 @@ export function middleware(request: NextRequest) {
     return response;
   }
 
-  // ✅ ADDED: Protect reset-password page
+  // =====================================================
+  // PROTECT PASSWORD RESET PAGE
+  // =====================================================
   if (pathname === "/auth/reset-password") {
     const url = request.nextUrl;
     const token = url.searchParams.get("token");
@@ -87,13 +151,19 @@ export function middleware(request: NextRequest) {
     return response;
   }
 
-  // Apply security headers to all other routes
+  // =====================================================
+  // APPLY SECURITY HEADERS TO ALL OTHER ROUTES
+  // =====================================================
   const response = NextResponse.next();
   addSecurityHeaders(response);
   return response;
 }
 
-function addSecurityHeaders(response: NextResponse) {
+/**
+ * Add security headers to response
+ * Implements defense-in-depth security headers
+ */
+function addSecurityHeaders(response: NextResponse): void {
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("X-Frame-Options", "DENY");
   response.headers.set("X-XSS-Protection", "1; mode=block");
@@ -103,7 +173,7 @@ function addSecurityHeaders(response: NextResponse) {
     "camera=(), microphone=(), geolocation=(), interest-cohort=()"
   );
 
-  // ✅ UPDATED: Add reCAPTCHA domains to CSP
+  // Content Security Policy with reCAPTCHA support
   const cspHeader = `
     default-src 'self';
     script-src 'self' 'unsafe-eval' 'unsafe-inline' https://www.google.com https://www.gstatic.com;
@@ -122,15 +192,25 @@ function addSecurityHeaders(response: NextResponse) {
   response.headers.set("Content-Security-Policy", cspHeader);
 }
 
+/**
+ * Configure which routes middleware should run on
+ *
+ * Matcher patterns:
+ * - /dashboard/:path* - All dashboard routes and subroutes
+ * - /verify-email - Email verification page
+ * - /auth/* - All auth pages
+ * - Regex pattern - All other routes except static files and API routes
+ */
 export const config = {
   matcher: [
+    "/dashboard/:path*", // Protect all dashboard routes
     "/verify-email",
     "/auth/verify-email",
     "/auth/email-verified",
-    "/auth/reset-password", // ✅ ADDED
-    "/auth/login", // ✅ ADDED
-    "/auth/register", // ✅ ADDED
-    "/auth/forgot-password", // ✅ ADDED
+    "/auth/reset-password",
+    "/auth/login",
+    "/auth/register",
+    "/auth/forgot-password",
     "/((?!api|_next/static|_next/image|favicon.ico).*)",
   ],
 };

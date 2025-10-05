@@ -310,7 +310,7 @@ export function ForgotPasswordForm({
       <Card className="overflow-hidden">
         <CardHeader className="text-center space-y-2">
           <h3>Forgot Password?</h3>
-          <CardDescription className="text-balance">
+          <CardDescription>
             Enter your email address and we&apos;ll send you instructions to
             reset your password
           </CardDescription>
