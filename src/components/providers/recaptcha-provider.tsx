@@ -8,7 +8,7 @@ interface ReCaptchaProviderProps {
 }
 
 export function ReCaptchaProvider({ children }: ReCaptchaProviderProps) {
-  const siteKey = process.env.RECAPTCHA_SITE_KEY;
+  const siteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
 
   if (!siteKey) {
     console.warn(
