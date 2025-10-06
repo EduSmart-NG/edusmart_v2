@@ -15,7 +15,7 @@ import {
   getDisplayValue,
   formatDate,
 } from "@/lib/utils/profile";
-import { UpdateProfileForm } from "@/components/profile/update-profile-form";
+import { UpdateProfileForm } from "@/components/dashboard/profile/update-profile-form";
 import { authClient } from "@/lib/auth-client";
 import type { SessionData } from "@/types/user-management";
 import type { PersonalInformationProps } from "@/types/profile";
@@ -53,7 +53,7 @@ export function PersonalInformation({ user }: PersonalInformationProps) {
 
   return (
     <div className="rounded-lg border bg-white p-6">
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between">
         <h3>Personal Information</h3>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>

@@ -1,4 +1,5 @@
 import { Gender } from "@/generated/prisma";
+import { DeviceInfo } from "@/lib/utils/device-parser";
 
 /**
  * Session data structure from Better Auth
@@ -29,6 +30,7 @@ export interface SessionData {
     state: string | null;
     lga: string | null;
     schoolName: string | null;
+    twoFactorEnabled: boolean;
     createdAt: Date;
     updatedAt: Date;
   };
@@ -45,13 +47,8 @@ export interface DeviceSession {
   createdAt: Date;
   expiresAt: Date;
   isCurrent: boolean;
-  deviceInfo?: {
-    browser?: string;
-    os?: string;
-    device?: string;
-  };
+  deviceInfo?: DeviceInfo; // Changed from the old type to DeviceInfo
 }
-
 /**
  * User profile update input
  */
@@ -92,7 +89,6 @@ export interface DeleteAccountInput {
   token?: string;
   callbackURL?: string;
 }
-
 /**
  * Account linking input
  */

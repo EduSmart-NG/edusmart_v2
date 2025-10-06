@@ -12,7 +12,7 @@ export interface UserProfile {
   emailVerified: boolean;
   image: string | null;
   username: string; // Normalized (lowercase) username
-  displayUsername: string; // ✅ ADDED: Original username with preserved casing
+  displayUsername: string; // Original username with preserved casing
   dateOfBirth: Date;
   gender: Gender;
   phoneNumber: string | null;
@@ -22,6 +22,7 @@ export interface UserProfile {
   schoolName: string | null;
   createdAt: Date;
   updatedAt: Date;
+  twoFactorEnabled: boolean;
 }
 
 /**
@@ -102,7 +103,8 @@ export interface SessionUser {
   emailVerified: boolean;
   image: string | null;
   username: string;
-  displayUsername: string; // ✅ ADDED: For displaying username with original casing
+  displayUsername: string;
+  twoFactorEnabled: boolean; // Added for 2FA support
 }
 
 /**
@@ -142,11 +144,13 @@ export interface LoginResult {
     | "INVALID_CREDENTIALS"
     | "RATE_LIMITED"
     | "ACCOUNT_LOCKED"
+    | "CAPTCHA_FAILED"
     | "UNKNOWN_ERROR";
   errors?: Record<string, string>;
   retryAfter?: number; // Seconds to wait before retry
   redirectTo?: string;
   userEmail?: string; // For resend verification
+  twoFactorRedirect?: boolean; // NEW: Indicates 2FA verification is required
 }
 
 /**
@@ -200,4 +204,59 @@ export interface PasswordResetRateLimitData {
   firstAttempt: string; // ISO timestamp
   blockedUntil?: string; // ISO timestamp
   isBlocked: boolean;
+}
+
+/**
+ * Two-factor authentication verification result
+ */
+export interface TwoFactorVerifyResult {
+  success: boolean;
+  message: string;
+  code?:
+    | "VERIFIED"
+    | "INVALID_CODE"
+    | "EXPIRED_CODE"
+    | "NO_SESSION"
+    | "UNKNOWN_ERROR";
+  redirectTo?: string;
+}
+
+/**
+ * Two-factor authentication enable result
+ */
+export interface TwoFactorEnableResult {
+  success: boolean;
+  message: string;
+  totpURI?: string; // For QR code generation
+  backupCodes?: string[]; // Recovery codes
+  code?: "ENABLED" | "INVALID_PASSWORD" | "ALREADY_ENABLED" | "UNKNOWN_ERROR";
+}
+
+/**
+ * Two-factor authentication disable result
+ */
+export interface TwoFactorDisableResult {
+  success: boolean;
+  message: string;
+  code?: "DISABLED" | "INVALID_PASSWORD" | "NOT_ENABLED" | "UNKNOWN_ERROR";
+}
+
+/**
+ * Backup codes view result
+ */
+export interface BackupCodesViewResult {
+  success: boolean;
+  message: string;
+  backupCodes?: string[];
+  code?: "SUCCESS" | "NO_CODES" | "UNAUTHORIZED" | "UNKNOWN_ERROR";
+}
+
+/**
+ * Backup codes regenerate result
+ */
+export interface BackupCodesRegenerateResult {
+  success: boolean;
+  message: string;
+  backupCodes?: string[];
+  code?: "REGENERATED" | "INVALID_PASSWORD" | "UNAUTHORIZED" | "UNKNOWN_ERROR";
 }
