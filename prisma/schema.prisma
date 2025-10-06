@@ -11,25 +11,27 @@ datasource db {
 
 // Better Auth core models with additional fields
 model User {
-  id              String    @id @default(cuid())
-  name            String
-  email           String    @unique
-  emailVerified   Boolean   @default(false)
-  image           String?
-  username        String    @unique
-  displayUsername String    @unique
-  dateOfBirth     DateTime?
-  gender          Gender?
-  phoneNumber     String?
-  address         String?   @db.Text
-  state           String?
-  lga             String?
-  schoolName      String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  name             String
+  email            String    @unique
+  emailVerified    Boolean   @default(false)
+  image            String?
+  username         String    @unique
+  displayUsername  String    @unique
+  dateOfBirth      DateTime?
+  gender           Gender?
+  phoneNumber      String?
+  address          String?   @db.Text
+  state            String?
+  lga              String?
+  schoolName       String?
+  twoFactorEnabled Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  sessions Session[]
-  accounts Account[]
+  sessions  Session[]
+  accounts  Account[]
+  twoFactor TwoFactor?
 
   @@index([email])
   @@index([username])
@@ -87,6 +89,18 @@ model Verification {
   @@unique([identifier, value(length: 255)])
   @@index([value(length: 255)])
   @@map("verification")
+}
+
+model TwoFactor {
+  id          String  @id @default(cuid())
+  secret      String? @db.Text
+  backupCodes String? @db.Text
+  userId      String  @unique
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("twoFactor")
 }
 
 enum Gender {

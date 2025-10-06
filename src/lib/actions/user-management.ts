@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { headers } from "next/headers";
 import { z } from "zod";
+import { parseUserAgent } from "@/lib/utils/device-parser";
 import type {
   SessionData,
   UpdateUserProfileInput,
@@ -94,19 +95,18 @@ export async function updateUserProfile(
       lga: z.string().max(100).optional().nullable(),
       schoolName: z.string().max(200).optional().nullable(),
       image: z.string().url().optional().nullable(),
-      // dateOfBirth and gender need special handling as strings
     });
 
     const validatedData = schema.parse(data);
 
     const headersList = await headers();
 
-    // ✅ FIX: Convert Date to string for Better Auth compatibility
+    // Convert Date to string for Better Auth compatibility
     const bodyData: Record<string, unknown> = {
       ...validatedData,
     };
 
-    // Better Auth expects dateOfBirth as string, not Date
+    // Better Auth expects dateOfBirth as Date object
     if (data.dateOfBirth) {
       // Convert to full DateTime by adding midnight UTC time
       bodyData.dateOfBirth = new Date(
@@ -313,30 +313,44 @@ export async function changeUserPassword(
  */
 export async function deleteUserAccount(
   data: DeleteAccountInput
-): Promise<ActionResult> {
+): Promise<ActionResult<void>> {
+  // ✅ Keep as void
   try {
     const schema = z.object({
       password: z.string().optional(),
       token: z.string().optional(),
-      callbackURL: z.string().url().optional(),
+      callbackURL: z.string().optional(),
     });
 
     const validatedData = schema.parse(data);
-
     const headersList = await headers();
+
+    // Construct full URL on server
+    let callbackURL = validatedData.callbackURL || "/goodbye";
+    if (!callbackURL.startsWith("http")) {
+      const host = headersList.get("host") || "";
+      const protocol = headersList.get("x-forwarded-proto") || "https";
+      callbackURL = `${protocol}://${host}${callbackURL}`;
+    }
 
     await auth.api.deleteUser({
       headers: headersList,
       body: {
         password: validatedData.password,
         token: validatedData.token,
-        callbackURL: validatedData.callbackURL || "/goodbye",
+        callbackURL,
       },
     });
 
+    // Better Auth handles the logic internally:
+    // - If password provided: deletes immediately
+    // - If no password: sends verification email
+
     return {
       success: true,
-      message: "Account deleted successfully",
+      message: validatedData.password
+        ? "Account deleted successfully"
+        : "Verification email sent. Check your email to confirm deletion.",
     };
   } catch (error) {
     console.error("Delete account error:", error);
@@ -350,24 +364,6 @@ export async function deleteUserAccount(
     }
 
     if (error instanceof APIError) {
-      const errorMessage = error.message.toLowerCase();
-
-      if (errorMessage.includes("password")) {
-        return {
-          success: false,
-          message: "Password verification required",
-          code: "PASSWORD_REQUIRED",
-        };
-      }
-
-      if (errorMessage.includes("fresh") || errorMessage.includes("session")) {
-        return {
-          success: false,
-          message: "Please log in again to delete your account",
-          code: "FRESH_SESSION_REQUIRED",
-        };
-      }
-
       return {
         success: false,
         message: error.message,
@@ -569,7 +565,6 @@ export async function revokeAllUserSessions(): Promise<SessionRevocationResult> 
  */
 export async function listUserAccounts(): Promise<ActionResult<UserAccount[]>> {
   try {
-    // ✅ FIX: Use Prisma directly as Better Auth doesn't expose server-side listAccounts API
     const headersList = await headers();
     const session = await auth.api.getSession({
       headers: headersList,
@@ -659,14 +654,11 @@ export async function linkUserAccount(
 
     const headersList = await headers();
 
-    // ✅ FIX: Use linkSocialAccount instead of linkSocial
     await auth.api.linkSocialAccount({
       headers: headersList,
       body: {
         provider: validatedData.provider,
         callbackURL: validatedData.callbackURL || "/dashboard",
-        // Note: scopes and idToken might not be supported by server API
-        // These work on client-side authClient.linkSocial
       },
     });
 
@@ -774,39 +766,64 @@ export async function unlinkUserAccount(
 }
 
 /**
- * Parse user agent string to extract device information
- * Simple implementation - can be enhanced with a library like ua-parser-js
+ * Check if user has a password (credential account)
+ * OAuth-only users don't have passwords
+ *
+ * @param userId - User ID to check
+ * @returns Whether user has a password set
  */
-function parseUserAgent(userAgent: string | null): {
-  browser?: string;
-  os?: string;
-  device?: string;
-} {
-  if (!userAgent) return {};
+export async function userHasPassword(
+  userId?: string
+): Promise<ActionResult<boolean>> {
+  try {
+    let targetUserId = userId;
 
-  const ua = userAgent.toLowerCase();
+    // If no userId provided, get from current session
+    if (!targetUserId) {
+      const headersList = await headers();
+      const session = await auth.api.getSession({
+        headers: headersList,
+      });
 
-  // Detect browser
-  let browser = "Unknown";
-  if (ua.includes("firefox")) browser = "Firefox";
-  else if (ua.includes("edg")) browser = "Edge";
-  else if (ua.includes("chrome")) browser = "Chrome";
-  else if (ua.includes("safari")) browser = "Safari";
-  else if (ua.includes("opera")) browser = "Opera";
+      if (!session) {
+        return {
+          success: false,
+          message: "No active session found",
+          code: "NO_SESSION",
+        };
+      }
 
-  // Detect OS
-  let os = "Unknown";
-  if (ua.includes("windows")) os = "Windows";
-  else if (ua.includes("mac")) os = "macOS";
-  else if (ua.includes("linux")) os = "Linux";
-  else if (ua.includes("android")) os = "Android";
-  else if (ua.includes("ios") || ua.includes("iphone") || ua.includes("ipad"))
-    os = "iOS";
+      targetUserId = session.user.id;
+    }
 
-  // Detect device
-  let device = "Desktop";
-  if (ua.includes("mobile")) device = "Mobile";
-  else if (ua.includes("tablet") || ua.includes("ipad")) device = "Tablet";
+    // Check if user has a credential account (with password)
+    const credentialAccount = await prisma.account.findFirst({
+      where: {
+        userId: targetUserId,
+        providerId: "credential",
+      },
+      select: {
+        id: true,
+        password: true,
+      },
+    });
 
-  return { browser, os, device };
+    const hasPassword = !!(credentialAccount && credentialAccount.password);
+
+    return {
+      success: true,
+      message: hasPassword
+        ? "User has password"
+        : "User does not have password",
+      data: hasPassword,
+    };
+  } catch (error) {
+    console.error("Check password error:", error);
+
+    return {
+      success: false,
+      message: "Failed to check password status",
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
 }

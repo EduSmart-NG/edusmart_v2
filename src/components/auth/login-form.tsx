@@ -33,7 +33,7 @@ export function LoginForm({
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // ✅ NEW: Get callback URL from query params (set by middleware)
+  // Get callback URL from query params (set by middleware)
   const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
 
   const [isLoading, setIsLoading] = useState(false);
@@ -122,11 +122,24 @@ export function LoginForm({
       const result: LoginResult = await loginUser(formData, recaptchaToken);
 
       if (result.success) {
+        // ✅ NEW: Check if 2FA verification is required
+        if (result.twoFactorRedirect) {
+          toast.info("Two-factor authentication required", {
+            description: "Please enter your verification code.",
+          });
+
+          // Redirect to 2FA verification page with callback URL
+          router.push(
+            `/auth/2fa?callbackUrl=${encodeURIComponent(callbackUrl)}`
+          );
+          return;
+        }
+
         toast.success("Welcome back!", {
           description: "You have successfully logged in.",
         });
 
-        // ✅ UPDATED: Use callbackUrl from middleware, fallback to result.redirectTo or /dashboard
+        // Use callbackUrl from middleware, fallback to result.redirectTo or /dashboard
         const redirectPath = result.redirectTo || callbackUrl;
         router.push(redirectPath);
         router.refresh();

@@ -27,6 +27,7 @@ import { APIError } from "better-auth/api";
  * - Rate limiting via Better Auth
  * - Email verification enforcement
  * - reCAPTCHA v3 bot protection
+ * - Two-factor authentication support
  *
  * @param data - Login credentials
  * @param recaptchaToken - reCAPTCHA v3 token from client
@@ -58,7 +59,6 @@ export async function loginUser(
 
     // Step 4: Attempt login with Better Auth
     // Better Auth automatically reads reCAPTCHA token from 'x-captcha-token' header
-    // We need to create headers with the token
     const customHeaders = new Headers();
     customHeaders.set("x-captcha-token", recaptchaToken);
 
@@ -69,10 +69,25 @@ export async function loginUser(
         rememberMe,
       },
       headers: customHeaders,
+      asResponse: true, // Get full response to check for 2FA redirect
     });
 
-    // Step 5: Handle unsuccessful login
-    if (!result) {
+    // Step 5: Parse response
+    const responseData = await result.json();
+
+    // Step 6: Check if 2FA verification is required
+    // Better Auth returns { twoFactorRedirect: true } when user has 2FA enabled
+    if (responseData && responseData.twoFactorRedirect === true) {
+      // Don't clear lockout yet - user still needs to complete 2FA
+      return {
+        success: true,
+        message: "Two-factor authentication required",
+        twoFactorRedirect: true,
+      };
+    }
+
+    // Step 7: Handle unsuccessful login (no result data)
+    if (!responseData || !responseData.user) {
       const { locked: nowLocked } = await recordFailedAttempt(identifier);
 
       if (nowLocked) {
@@ -96,7 +111,7 @@ export async function loginUser(
       };
     }
 
-    // Step 6: Success - clear any failed attempts
+    // Step 8: Success - clear any failed attempts
     await clearLockout(identifier);
 
     return {
@@ -121,7 +136,7 @@ export async function loginUser(
         return {
           success: false,
           message: "Bot verification failed. Please try again.",
-          code: "INVALID_CREDENTIALS",
+          code: "CAPTCHA_FAILED",
         };
       }
 

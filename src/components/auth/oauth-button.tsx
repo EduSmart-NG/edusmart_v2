@@ -23,6 +23,8 @@ export function OAuthButtons({ mode = "signup" }: OAuthButtonsProps) {
       });
     } catch (error) {
       console.error(`${provider} sign in error:`, error);
+      console.log(mode);
+
       setLoadingProvider(null);
     }
   };
