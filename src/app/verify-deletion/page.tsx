@@ -3,15 +3,18 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import { Metadata } from "next";
+import ParticlesBackground from "@/components/ui/particles-background";
 
 export const metadata: Metadata = {
   title: "Verify Account Deletion",
   description: "Please check your email to complete account deletion",
 };
+
 export default function VerifyEmailPage() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
-      <Card className="w-full max-w-lg space-y-6 p-6">
+    <div className="relative flex min-h-screen items-center justify-center px-4">
+      <ParticlesBackground />
+      <Card className="relative z-10 w-full max-w-lg space-y-6 p-6">
         <div className="text-center">
           <h3>Check Your Email</h3>
 
@@ -34,12 +37,12 @@ export default function VerifyEmailPage() {
         </div>
 
         <div className="border-t pt-6">
-          <Link href="/">
-            <Button variant="outline" className="w-full">
+          <Button variant="outline" className="w-full" asChild>
+            <Link href="/">
               Go To Homepage
-              <ArrowRight className="mr-2 h-4 w-4" />
-            </Button>
-          </Link>
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Link>
+          </Button>
         </div>
       </Card>
     </div>

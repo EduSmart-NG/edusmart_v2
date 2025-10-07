@@ -3,11 +3,15 @@ import { Card } from "./card";
 import { FileQuestion } from "lucide-react";
 import { Button } from "./button";
 import Link from "next/link";
+import ParticlesBackground from "./particles-background";
 
 const NotFoundComponent = ({ redirectLink }: { redirectLink: string }) => {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <Card className="w-full max-w-md space-y-6 p-8">
+    <div className="relative flex min-h-screen w-full items-center justify-center px-4">
+      <div className="absolute inset-0 -z-10">
+        <ParticlesBackground />
+      </div>
+      <Card className="relative z-10 w-full max-w-md space-y-6 p-8 shadow-lg">
         <div className="flex flex-col items-center text-center">
           {/* Icon */}
           <div className="mb-4 flex size-16 items-center justify-center rounded-full bg-muted">

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Icons } from "@/components/icons";
 import { Card } from "@/components/ui/card";
 import Link from "next/link";
+import ParticlesBackground from "@/components/ui/particles-background";
 
 interface ErrorProps {
   error: Error & { digest?: string };
@@ -18,32 +19,35 @@ export default function Error({ error, reset }: ErrorProps) {
   }, [error]);
 
   return (
-    <div className="container flex h-screen w-screen flex-col items-center justify-center">
-      <Card className="w-full max-w-md space-y-6 p-8">
-        <div className="flex flex-col items-center text-center">
+    <div className="relative container flex h-screen w-screen flex-col items-center justify-center">
+      <ParticlesBackground />
+      <Card className="relative z-10 w-full max-w-md space-y-6 p-8">
+        <div className="flex flex-col items-center text-center space-y-4">
           {/* Icon */}
-          <div className="mb-4 flex size-16 items-center justify-center rounded-full bg-muted">
+          <div className="flex size-16 items-center justify-center rounded-full bg-muted">
             <Icons.alert className="h-10 w-10 text-destructive" />
           </div>
 
           {/* Error Title */}
-          <h2 className="mb-3 text-2xl font-semibold">Something went wrong</h2>
+          <h2 className="text-2xl font-semibold">Something went wrong</h2>
 
           {/* Description */}
           <p className="text-sm text-muted-foreground">
             An error occurred while processing your request. Please try again.
           </p>
 
-          <div className="rounded-lg border bg-card p-4">
+          <div className="w-full rounded-lg border bg-card p-4">
             <p className="text-sm text-muted-foreground font-mono break-all">
               {error.message || "Unknown error"}
             </p>
           </div>
 
-          {/* Action Button */}
-          <div className="flex flex-col space-y-2">
-            <Button onClick={reset}>Try again</Button>
-            <Button asChild className="w-full">
+          {/* Action Buttons */}
+          <div className="w-full flex flex-col space-y-2">
+            <Button onClick={reset} className="w-full">
+              Try again
+            </Button>
+            <Button asChild variant="outline" className="w-full">
               <Link href="/auth/register">Return to Registration</Link>
             </Button>
           </div>
