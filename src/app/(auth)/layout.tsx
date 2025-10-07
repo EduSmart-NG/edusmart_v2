@@ -1,4 +1,5 @@
 import { ReCaptchaProvider } from "@/components/providers/recaptcha-provider";
+import ParticlesBackground from "@/components/ui/particles-background";
 import type { ReactNode } from "react";
 
 /**
@@ -14,6 +15,7 @@ import type { ReactNode } from "react";
  * This layout only provides:
  * - Consistent styling for auth pages
  * - ReCaptchaProvider wrapper
+ * - Animated particles background
  *
  * @see src/middleware.ts for the actual auth page protection
  */
@@ -23,10 +25,11 @@ interface AuthLayoutProps {
 }
 
 export default function AuthLayout({ children }: AuthLayoutProps) {
-  // No session validation here - middleware handles it
   return (
-    <div className="min-h-screen bg-background">
-      <div className="container relative flex min-h-screen flex-col items-center justify-center py-10">
+    <div className="relative min-h-screen">
+      <ParticlesBackground />
+
+      <div className="container relative z-10 flex min-h-screen flex-col items-center justify-center py-10">
         <ReCaptchaProvider>{children}</ReCaptchaProvider>
       </div>
     </div>

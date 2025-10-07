@@ -27,6 +27,7 @@ import { registerSchema, type RegisterInput } from "@/lib/validations/auth";
 import { NIGERIAN_STATES_AND_LGAS } from "@/lib/utils/nigerianStates";
 import { toast } from "sonner";
 import { OAuthButtons } from "./oauth-button";
+import Link from "next/link";
 
 export function RegisterForm() {
   const router = useRouter();
@@ -664,19 +665,28 @@ export function RegisterForm() {
       <div className="space-y-3">
         <p className="text-center text-sm text-gray-600">
           Already have an account?{" "}
-          <a href="/auth/login" className="font-medium hover:underline">
+          <Link
+            href="/auth/login"
+            className="text-primary font-medium hover:underline"
+          >
             Sign in
-          </a>
+          </Link>
         </p>
         <div className="text-gray-600 text-center text-xs">
           By creating an account, you agree to our{" "}
-          <a href="/terms" className="underline underline-offset-4">
+          <Link
+            href="/terms"
+            className="text-primary font-medium hover:underline"
+          >
             Terms of Service
-          </a>{" "}
+          </Link>{" "}
           and{" "}
-          <a href="/privacy" className="underline underline-offset-4">
+          <Link
+            href="/privacy"
+            className="text-primary font-medium hover:underline"
+          >
             Privacy Policy
-          </a>
+          </Link>
         </div>
       </div>
     </div>

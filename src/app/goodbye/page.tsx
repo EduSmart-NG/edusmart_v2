@@ -1,11 +1,13 @@
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import ParticlesBackground from "@/components/ui/particles-background";
 import Link from "next/link";
 
 export default function GoodbyePage() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50">
-      <Card className="w-full max-w-md space-y-6 p-8">
+    <div className="relative flex min-h-screen items-center justify-center">
+      <ParticlesBackground />
+      <Card className="relative z-10 w-full max-w-md space-y-6 p-8">
         <div className="text-center">
           <h3>Account Deleted</h3>
           <p className="mt-2 text-gray-600">
@@ -16,7 +18,7 @@ export default function GoodbyePage() {
             always create a new account.
           </p>
           <div className="mt-6">
-            <Button>
+            <Button asChild>
               <Link href="/">Return to Home</Link>
             </Button>
           </div>
