@@ -23,6 +23,8 @@ export interface UserProfile {
   createdAt: Date;
   updatedAt: Date;
   twoFactorEnabled: boolean;
+  role?: string; // Admin role field
+  banned?: boolean; // Ban status field
 }
 
 /**
@@ -94,7 +96,7 @@ export interface UsernameAvailability {
 }
 
 /**
- * Session user data
+ * Session user data with admin fields
  */
 export interface SessionUser {
   id: string;
@@ -104,7 +106,9 @@ export interface SessionUser {
   image: string | null;
   username: string;
   displayUsername: string;
-  twoFactorEnabled: boolean; // Added for 2FA support
+  twoFactorEnabled: boolean;
+  role?: string; // Admin role field
+  banned?: boolean; // Ban status field
 }
 
 /**
@@ -145,12 +149,15 @@ export interface LoginResult {
     | "RATE_LIMITED"
     | "ACCOUNT_LOCKED"
     | "CAPTCHA_FAILED"
+    | "BANNED_USER"
     | "UNKNOWN_ERROR";
   errors?: Record<string, string>;
   retryAfter?: number; // Seconds to wait before retry
   redirectTo?: string;
   userEmail?: string; // For resend verification
-  twoFactorRedirect?: boolean; // NEW: Indicates 2FA verification is required
+  twoFactorRedirect?: boolean; // Indicates 2FA verification is required
+  banReason?: string; // Ban reason if user is banned
+  banExpires?: Date; // Ban expiration date if temporary
 }
 
 /**

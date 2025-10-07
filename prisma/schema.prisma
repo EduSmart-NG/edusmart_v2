@@ -9,7 +9,7 @@ datasource db {
   shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
 
-// Better Auth core models with additional fields
+// Better Auth core models with additional fields + Admin fields
 model User {
   id               String    @id @default(cuid())
   name             String
@@ -26,8 +26,15 @@ model User {
   lga              String?
   schoolName       String?
   twoFactorEnabled Boolean   @default(false)
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+
+  // Admin plugin fields
+  role       String?   @default("user")
+  banned     Boolean   @default(false)
+  banReason  String?   @db.Text
+  banExpires DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   sessions  Session[]
   accounts  Account[]
@@ -36,6 +43,8 @@ model User {
   @@index([email])
   @@index([username])
   @@index([displayUsername])
+  @@index([role])
+  @@index([banned])
   @@map("user")
 }
 
@@ -49,10 +58,14 @@ model Session {
   userAgent String?  @db.Text
   userId    String
 
+  // Admin plugin field for impersonation
+  impersonatedBy String?
+
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([token])
+  @@index([impersonatedBy])
   @@map("session")
 }
 

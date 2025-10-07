@@ -1,6 +1,6 @@
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
-import { username, captcha, twoFactor } from "better-auth/plugins";
+import { username, captcha, twoFactor, admin } from "better-auth/plugins";
 import { nextCookies } from "better-auth/next-js";
 import prisma from "@/lib/prisma";
 import {
@@ -21,7 +21,7 @@ export const auth = betterAuth({
 
   trustedOrigins: [process.env.BETTER_AUTH_URL || "http://localhost:3000"],
 
-  appName: "EduSmart", // Required for 2FA issuer
+  appName: "EduSmart",
 
   plugins: [
     username({
@@ -71,6 +71,16 @@ export const auth = betterAuth({
         length: 10,
         storeBackupCodes: "encrypted",
       },
+    }),
+    admin({
+      defaultRole: "user",
+      adminRoles: ["admin"],
+      adminUserIds:
+        process.env.ADMIN_USER_IDS?.split(",").filter(Boolean) || [],
+      impersonationSessionDuration: 60 * 60, // 1 hour
+      defaultBanReason: "Violation of terms of service",
+      bannedUserMessage:
+        "Your account has been suspended. Please contact support if you believe this is an error.",
     }),
     nextCookies(), // MUST be last plugin in array
   ],
@@ -242,8 +252,14 @@ export const auth = betterAuth({
         }
       },
       beforeDelete: async (user) => {
-        if (user.email.includes("admin@") || user.email.includes("support@")) {
-          throw new Error("Admin accounts cannot be deleted");
+        // Prevent deletion of admin accounts via regular deletion flow
+        const adminUser = await prisma.user.findUnique({
+          where: { id: user.id },
+          select: { role: true },
+        });
+
+        if (adminUser?.role === "admin") {
+          throw new Error("Admin accounts cannot be deleted via this method");
         }
 
         console.log(`Preparing to delete account: ${user.email}`);
@@ -325,6 +341,51 @@ export const auth = betterAuth({
       "/two-factor/send-otp": {
         window: 300,
         max: 3,
+      },
+      // Admin endpoints rate limiting
+      "/admin/create-user": {
+        window: 60,
+        max: 5,
+      },
+      "/admin/list-users": {
+        window: 60,
+        max: 30,
+      },
+      "/admin/set-role": {
+        window: 60,
+        max: 10,
+      },
+      "/admin/ban-user": {
+        window: 60,
+        max: 10,
+      },
+      "/admin/unban-user": {
+        window: 60,
+        max: 10,
+      },
+      "/admin/impersonate-user": {
+        window: 300,
+        max: 5,
+      },
+      "/admin/remove-user": {
+        window: 300,
+        max: 5,
+      },
+      "/admin/set-user-password": {
+        window: 60,
+        max: 10,
+      },
+      "/admin/list-user-sessions": {
+        window: 60,
+        max: 20,
+      },
+      "/admin/revoke-user-session": {
+        window: 60,
+        max: 20,
+      },
+      "/admin/update-user": {
+        window: 60,
+        max: 10,
       },
     },
   },
