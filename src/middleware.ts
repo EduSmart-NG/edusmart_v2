@@ -136,7 +136,7 @@ export function middleware(request: NextRequest) {
     // Only redirect if we're confident about the session
     // Add a query parameter to track redirects
     const dashboardUrl = new URL("/dashboard", request.url);
-    dashboardUrl.searchParams.set("from_middleware", "true");
+    // dashboardUrl.searchParams.set("from_middleware", "true");
     return NextResponse.redirect(dashboardUrl);
   }
 
