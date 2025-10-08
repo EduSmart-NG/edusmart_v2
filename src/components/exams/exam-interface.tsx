@@ -540,7 +540,10 @@ export default function ExamInterface() {
   );
 
   return (
-    <div ref={containerRef} className="min-h-screen bg-gray-50 p-4 my-12">
+    <div
+      ref={containerRef}
+      className={`min-h-screen bg-gray-50 p-4 ${isFullscreen ? "overflow-y-auto h-screen my-0" : "my-12"}`}
+    >
       {/* Alert Notification */}
       {alertMessage && (
         <div className="fixed top-4 right-4 z-50 w-96 animate-in slide-in-from-top-2">
