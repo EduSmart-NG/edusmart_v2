@@ -269,3 +269,28 @@ export interface PermissionCheckResult {
   hasPermission: boolean;
   reason?: string;
 }
+
+/**
+ * Result of admin user creation
+ * Contains created user details and temporary password for logging
+ *
+ * SECURITY: tempPassword should ONLY be used for server-side logging
+ * and NEVER sent to the client or stored in plaintext
+ */
+export interface CreateUserAdminResult {
+  /**
+   * The newly created user object
+   */
+  user: AdminUser;
+
+  /**
+   * Temporary password generated for the user
+   *
+   * CRITICAL SECURITY NOTES:
+   * - This password is for server-side audit logging ONLY
+   * - NEVER send this to the client in API responses
+   * - NEVER store this in database (Better Auth handles hashing)
+   * - Must be communicated to user via secure channel (email, when implemented)
+   */
+  tempPassword: string;
+}
