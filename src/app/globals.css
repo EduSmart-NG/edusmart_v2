@@ -247,3 +247,12 @@ h6 {
   }
 
 }
+
+.grecaptcha-badge {
+  visibility: hidden !important;
+}
+
+/* Example: Show on a page with class 'contact-page' */
+.contact-page .grecaptcha-badge {
+  visibility: visible !important;
+}
