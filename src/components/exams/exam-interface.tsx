@@ -22,6 +22,9 @@ import {
   AlertTriangle,
   CheckCircle2,
   Info,
+  Shield,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -335,19 +338,38 @@ export default function ExamInterface() {
   const [timeRemaining, setTimeRemaining] = useState(mockExamData.time_limit);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showSubmitDialog, setShowSubmitDialog] = useState(false);
+  const [showExitWarningDialog, setShowExitWarningDialog] = useState(false);
+  const [allowFullscreenExit, setAllowFullscreenExit] = useState(false);
   const [alertMessage, setAlertMessage] = useState<{
     type: "success" | "warning" | "info";
     title: string;
     description: string;
   } | null>(null);
 
+  // Exam protection states
+  const [violations, setViolations] = useState({
+    tabSwitches: 0,
+    focusLoss: 0,
+    mouseLeavePage: 0,
+    shortcutAttempts: 0,
+  });
+  const [isTabVisible, setIsTabVisible] = useState(true);
+  const [hasWindowFocus, setHasWindowFocus] = useState(true);
+
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const alertTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const focusCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const wasFullscreenRef = useRef(false);
+  const reenterFullscreenTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const currentQuestion = mockExamData.questions[currentQuestionIndex];
   const totalQuestions = mockExamData.questions.length;
   const answeredQuestions = Object.keys(answers).length;
+  const totalViolations = Object.values(violations).reduce(
+    (sum, count) => sum + count,
+    0
+  );
 
   // Show alert function
   const showAlert = useCallback(
@@ -370,6 +392,18 @@ export default function ExamInterface() {
     []
   );
 
+  // Record violation function
+  const recordViolation = useCallback(
+    (type: keyof typeof violations, message: string) => {
+      setViolations((prev) => ({
+        ...prev,
+        [type]: prev[type] + 1,
+      }));
+      showAlert("warning", "Exam Violation Detected", message, 4000);
+    },
+    [showAlert]
+  );
+
   // Memoized submit function
   const submitExam = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current);
@@ -380,6 +414,8 @@ export default function ExamInterface() {
       timeSpent: mockExamData.time_limit - timeRemaining,
       answeredCount,
       totalQuestions: mockExamData.questions.length,
+      violations,
+      totalViolations,
     };
 
     console.log("Exam submitted:", results);
@@ -389,7 +425,8 @@ export default function ExamInterface() {
       "Your exam has been submitted successfully!"
     );
     setShowSubmitDialog(false);
-  }, [answers, timeRemaining, showAlert]);
+    setShowExitWarningDialog(false);
+  }, [answers, timeRemaining, violations, totalViolations, showAlert]);
 
   // Memoized auto-submit function
   const handleAutoSubmit = useCallback(() => {
@@ -400,9 +437,242 @@ export default function ExamInterface() {
       2000
     );
     setTimeout(() => {
+      setAllowFullscreenExit(true);
       submitExam();
     }, 2000);
   }, [submitExam, showAlert]);
+
+  // Handle exit warning dialog actions
+  const handleExitWarningSubmit = useCallback(() => {
+    setAllowFullscreenExit(true);
+    submitExam();
+  }, [submitExam]);
+
+  const handleExitWarningCancel = useCallback(() => {
+    setShowExitWarningDialog(false);
+    // Try to re-enter fullscreen if it was active
+    if (wasFullscreenRef.current && !document.fullscreenElement) {
+      reenterFullscreenTimeoutRef.current = setTimeout(() => {
+        containerRef.current?.requestFullscreen().catch((err) => {
+          console.error("Failed to re-enter fullscreen:", err);
+        });
+      }, 100);
+    }
+  }, []);
+
+  // Force re-enter fullscreen function
+  const forceReenterFullscreen = useCallback(() => {
+    if (
+      wasFullscreenRef.current &&
+      !document.fullscreenElement &&
+      !allowFullscreenExit
+    ) {
+      reenterFullscreenTimeoutRef.current = setTimeout(() => {
+        containerRef.current?.requestFullscreen().catch((err) => {
+          console.error("Failed to force re-enter fullscreen:", err);
+          // If we can't re-enter fullscreen, show the warning again
+          if (!showExitWarningDialog) {
+            setShowExitWarningDialog(true);
+          }
+        });
+      }, 50);
+    }
+  }, [allowFullscreenExit, showExitWarningDialog]);
+
+  // ESC key and fullscreen exit detection
+  useEffect(() => {
+    const handleEscapeKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        setShowExitWarningDialog(true);
+        // Force re-enter fullscreen after a short delay
+        forceReenterFullscreen();
+      }
+    };
+
+    const handleFullscreenChange = () => {
+      const isCurrentlyFullscreen = !!document.fullscreenElement;
+
+      // If we were in fullscreen and now we're not, and exit is not authorized
+      if (
+        wasFullscreenRef.current &&
+        !isCurrentlyFullscreen &&
+        !allowFullscreenExit
+      ) {
+        setShowExitWarningDialog(true);
+        // Immediately try to re-enter fullscreen
+        forceReenterFullscreen();
+        return; // Don't update fullscreen state yet
+      }
+
+      setIsFullscreen(isCurrentlyFullscreen);
+      wasFullscreenRef.current = isCurrentlyFullscreen;
+    };
+
+    document.addEventListener("keydown", handleEscapeKey, true);
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+
+    return () => {
+      document.removeEventListener("keydown", handleEscapeKey, true);
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      if (reenterFullscreenTimeoutRef.current) {
+        clearTimeout(reenterFullscreenTimeoutRef.current);
+      }
+    };
+  }, [allowFullscreenExit, forceReenterFullscreen]);
+
+  // Browser Activity Monitoring
+  useEffect(() => {
+    // Visibility change detection (tab switches)
+    const handleVisibilityChange = () => {
+      const isVisible = !document.hidden;
+      setIsTabVisible(isVisible);
+
+      if (!isVisible) {
+        recordViolation(
+          "tabSwitches",
+          "Tab switching detected. Please remain on the exam page."
+        );
+      }
+    };
+
+    // Focus change detection
+    const handleWindowBlur = () => {
+      setHasWindowFocus(false);
+      recordViolation(
+        "focusLoss",
+        "Window focus lost. Please keep the exam window active."
+      );
+    };
+
+    const handleWindowFocus = () => {
+      setHasWindowFocus(true);
+    };
+
+    // Mouse leave detection
+    const handleMouseLeave = (e: MouseEvent) => {
+      // Only trigger if mouse leaves the document completely
+      if (
+        e.clientY <= 0 ||
+        e.clientX <= 0 ||
+        e.clientX >= window.innerWidth ||
+        e.clientY >= window.innerHeight
+      ) {
+        recordViolation("mouseLeavePage", "Mouse left the exam window area.");
+      }
+    };
+
+    // Keyboard shortcuts blocking
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const { ctrlKey, shiftKey, key, metaKey } = e;
+
+      // Don't block ESC key here - handled in separate effect
+      if (key === "Escape") {
+        return;
+      }
+
+      // Block common shortcuts
+      if (ctrlKey || metaKey) {
+        if (key === "t" || key === "T") {
+          e.preventDefault();
+          recordViolation(
+            "shortcutAttempts",
+            "New tab shortcut blocked (Ctrl+T)."
+          );
+          return;
+        }
+        if (key === "n" || key === "N") {
+          e.preventDefault();
+          recordViolation(
+            "shortcutAttempts",
+            "New window shortcut blocked (Ctrl+N)."
+          );
+          return;
+        }
+        if (shiftKey && (key === "I" || key === "i")) {
+          e.preventDefault();
+          recordViolation(
+            "shortcutAttempts",
+            "Developer tools shortcut blocked (Ctrl+Shift+I)."
+          );
+          return;
+        }
+        if (key === "r" || key === "R") {
+          e.preventDefault();
+          recordViolation("shortcutAttempts", "Page refresh blocked (Ctrl+R).");
+          return;
+        }
+        if (key === "w" || key === "W") {
+          e.preventDefault();
+          recordViolation(
+            "shortcutAttempts",
+            "Close tab shortcut blocked (Ctrl+W)."
+          );
+          return;
+        }
+        if (key === "u" || key === "U") {
+          e.preventDefault();
+          recordViolation(
+            "shortcutAttempts",
+            "View source shortcut blocked (Ctrl+U)."
+          );
+          return;
+        }
+      }
+
+      // Block F12 (Developer Tools)
+      if (key === "F12") {
+        e.preventDefault();
+        recordViolation(
+          "shortcutAttempts",
+          "Developer tools key blocked (F12)."
+        );
+        return;
+      }
+
+      // Block Alt+Tab
+      if (e.altKey && key === "Tab") {
+        e.preventDefault();
+        recordViolation("shortcutAttempts", "Alt+Tab shortcut blocked.");
+        return;
+      }
+    };
+
+    // Focus checking with document.hasFocus()
+    const checkFocus = () => {
+      const currentlyHasFocus = document.hasFocus();
+      if (!currentlyHasFocus && hasWindowFocus) {
+        setHasWindowFocus(false);
+        recordViolation("focusLoss", "Document focus lost detected.");
+      } else if (currentlyHasFocus && !hasWindowFocus) {
+        setHasWindowFocus(true);
+      }
+    };
+
+    // Add event listeners
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("blur", handleWindowBlur);
+    window.addEventListener("focus", handleWindowFocus);
+    document.addEventListener("mouseleave", handleMouseLeave);
+    document.addEventListener("keydown", handleKeyDown);
+
+    // Start focus checking interval
+    focusCheckIntervalRef.current = setInterval(checkFocus, 1000);
+
+    // Cleanup
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("blur", handleWindowBlur);
+      window.removeEventListener("focus", handleWindowFocus);
+      document.removeEventListener("mouseleave", handleMouseLeave);
+      document.removeEventListener("keydown", handleKeyDown);
+
+      if (focusCheckIntervalRef.current) {
+        clearInterval(focusCheckIntervalRef.current);
+      }
+    };
+  }, [recordViolation, hasWindowFocus]);
 
   // Timer effect
   useEffect(() => {
@@ -455,23 +725,17 @@ export default function ExamInterface() {
     };
   }, [showAlert]);
 
-  // Fullscreen handling
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
-    };
-
-    document.addEventListener("fullscreenchange", handleFullscreenChange);
-    return () => {
-      document.removeEventListener("fullscreenchange", handleFullscreenChange);
-    };
-  }, []);
-
   // Cleanup alert timeout on unmount
   useEffect(() => {
     return () => {
       if (alertTimeoutRef.current) {
         clearTimeout(alertTimeoutRef.current);
+      }
+      if (focusCheckIntervalRef.current) {
+        clearInterval(focusCheckIntervalRef.current);
+      }
+      if (reenterFullscreenTimeoutRef.current) {
+        clearTimeout(reenterFullscreenTimeoutRef.current);
       }
     };
   }, []);
@@ -490,15 +754,14 @@ export default function ExamInterface() {
     if (!document.fullscreenElement) {
       try {
         await containerRef.current?.requestFullscreen();
+        wasFullscreenRef.current = true;
+        setAllowFullscreenExit(false); // Reset the flag when entering fullscreen
       } catch (err) {
         console.error("Failed to enter fullscreen mode", err);
       }
     } else {
-      try {
-        await document.exitFullscreen();
-      } catch (err) {
-        console.error("Failed to exit fullscreen mode", err);
-      }
+      // Only allow manual exit through the button if exam is not in progress
+      setShowExitWarningDialog(true);
     }
   }, []);
 
@@ -540,7 +803,10 @@ export default function ExamInterface() {
   );
 
   return (
-    <div ref={containerRef} className="min-h-screen bg-gray-50 p-4 my-12">
+    <div
+      ref={containerRef}
+      className={`min-h-screen bg-gray-50 p-4 ${isFullscreen ? "overflow-y-auto h-screen my-0" : "my-12"}`}
+    >
       {/* Alert Notification */}
       {alertMessage && (
         <div className="fixed top-4 right-4 z-50 w-96 animate-in slide-in-from-top-2">
@@ -611,6 +877,54 @@ export default function ExamInterface() {
           </div>
         </Card>
 
+        {/* Exam Protection Status */}
+        <Card className="px-4 md:px-8 py-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <Shield
+                  className={`h-5 w-5 ${totalViolations === 0 ? "text-green-600" : "text-red-600"}`}
+                />
+                <span className="text-sm font-medium">
+                  Exam Protection:{" "}
+                  {totalViolations === 0
+                    ? "Secure"
+                    : `${totalViolations} Violations`}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {isTabVisible ? (
+                  <Eye className="h-4 w-4 text-green-600" />
+                ) : (
+                  <EyeOff className="h-4 w-4 text-red-600" />
+                )}
+                <span className="text-xs text-gray-600">
+                  {isTabVisible ? "Tab Visible" : "Tab Hidden"}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div
+                  className={`h-2 w-2 rounded-full ${hasWindowFocus ? "bg-green-600" : "bg-red-600"}`}
+                />
+                <span className="text-xs text-gray-600">
+                  {hasWindowFocus ? "Focused" : "Unfocused"}
+                </span>
+              </div>
+            </div>
+
+            {totalViolations > 0 && (
+              <div className="text-xs text-gray-600 space-x-4">
+                <span>Tab switches: {violations.tabSwitches}</span>
+                <span>Focus loss: {violations.focusLoss}</span>
+                <span>Mouse left: {violations.mouseLeavePage}</span>
+                <span>Shortcuts: {violations.shortcutAttempts}</span>
+              </div>
+            )}
+          </div>
+        </Card>
+
         {/* Question Card */}
         <Card className="px-4 md:px-8 py-6">
           <div className="space-y-6">
@@ -660,13 +974,13 @@ export default function ExamInterface() {
                   <button
                     key={index}
                     onClick={() => handleAnswerSelect(index)}
-                    className={`w-full text-left p-4 rounded-lg border-2 transition-all ${
+                    className={`w-full text-left p-4 rounded-lg border-2 transition-all cursor-pointer ${
                       isSelected
                         ? "border-primary bg-primary/5"
                         : "border-gray-200 hover:border-gray-300 bg-white"
                     }`}
                   >
-                    <div className="flex items-start gap-3">
+                    <div className="flex items-center gap-3">
                       <div
                         className={`h-8 w-8 rounded-full flex items-center justify-center font-medium flex-shrink-0 ${
                           isSelected
@@ -775,6 +1089,74 @@ export default function ExamInterface() {
         </Card>
       </div>
 
+      {/* Exit Warning Dialog */}
+      <Dialog
+        open={showExitWarningDialog}
+        onOpenChange={(open) => {
+          if (!open) {
+            handleExitWarningCancel();
+          }
+        }}
+      >
+        <DialogContent
+          className="max-w-md"
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="h-5 w-5" />
+              Exit Exam Warning
+            </DialogTitle>
+            <DialogDescription>
+              You are attempting to exit the exam or leave fullscreen mode. This
+              action will submit your exam automatically and cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4 space-y-3">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <p className="text-sm text-red-800 font-medium mb-2">
+                ⚠️ Your exam will be submitted if you continue!
+              </p>
+              <p className="text-sm text-red-700">
+                All your current answers will be saved and the exam will end
+                immediately.
+              </p>
+            </div>
+
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Answered Questions:</span>
+                <span className="font-medium">
+                  {answeredQuestions} of {totalQuestions}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Time Remaining:</span>
+                <span className="font-medium">{formatTime(timeRemaining)}</span>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button
+              variant="outline"
+              onClick={handleExitWarningCancel}
+              className="w-full sm:w-auto"
+            >
+              Stay in Exam
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleExitWarningSubmit}
+              className="w-full sm:w-auto"
+            >
+              Submit & Exit
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Submit Confirmation Dialog */}
       <Dialog open={showSubmitDialog} onOpenChange={setShowSubmitDialog}>
         <DialogContent>
@@ -803,6 +1185,14 @@ export default function ExamInterface() {
                 {totalQuestions - answeredQuestions}
               </span>
             </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Total Violations:</span>
+              <span
+                className={`font-medium ${totalViolations > 0 ? "text-red-600" : "text-green-600"}`}
+              >
+                {totalViolations}
+              </span>
+            </div>
             <div className="flex justify-between text-sm pt-2 border-t">
               <span className="text-gray-600">Time Remaining:</span>
               <span className="font-medium">{formatTime(timeRemaining)}</span>
@@ -817,6 +1207,15 @@ export default function ExamInterface() {
                   ? "question"
                   : "questions"}
                 . Are you sure you want to submit?
+              </p>
+            </div>
+          )}
+
+          {totalViolations > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+              <p className="text-sm text-red-800">
+                {totalViolations} exam violations detected. These will be
+                included in your submission report.
               </p>
             </div>
           )}

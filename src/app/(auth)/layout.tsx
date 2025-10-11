@@ -1,5 +1,6 @@
 import { ReCaptchaProvider } from "@/components/providers/recaptcha-provider";
 import ParticlesBackground from "@/components/ui/particles-background";
+import RecaptchaFooter from "@/components/ui/recaptcha-footer";
 import type { ReactNode } from "react";
 
 /**
@@ -31,6 +32,7 @@ export default function AuthLayout({ children }: AuthLayoutProps) {
 
       <div className="container relative z-10 flex min-h-screen flex-col items-center justify-center py-10">
         <ReCaptchaProvider>{children}</ReCaptchaProvider>
+        <RecaptchaFooter />
       </div>
     </div>
   );
