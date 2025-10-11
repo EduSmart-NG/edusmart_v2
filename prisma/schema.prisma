@@ -33,6 +33,10 @@ model User {
   banReason  String?   @db.Text
   banExpires DateTime?
 
+  // NEW: Admin user creation tracking fields
+  passwordChangeRequired Boolean @default(false) // Force password change on first login
+  createdBy              String? // Admin user ID who created this account
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -45,6 +49,8 @@ model User {
   @@index([displayUsername])
   @@index([role])
   @@index([banned])
+  @@index([passwordChangeRequired]) // NEW: Index for first-login queries
+  @@index([createdBy]) // NEW: Index for audit queries
   @@map("user")
 }
 
