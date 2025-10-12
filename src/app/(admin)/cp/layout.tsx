@@ -1,10 +1,10 @@
 import { notFound, redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
-import prisma from "@/lib/prisma";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
+import { verifyAdminAccess } from "@/lib/rbac/utils";
 
 export default async function AdminLayout({
   children,
@@ -22,14 +22,10 @@ export default async function AdminLayout({
     redirect("/auth/login?callbackUrl=/dashboard/admin/users");
   }
 
-  // Check if user has admin role
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: { role: true, banned: true },
-  });
+  const accessCheck = await verifyAdminAccess();
 
-  // Redirect if user is banned or not admin
-  if (!user || user.banned || user.role !== "admin") {
+  // Redirect to 404 if not admin or banned
+  if (!accessCheck.success) {
     notFound();
   }
 
