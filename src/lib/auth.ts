@@ -9,6 +9,7 @@ import {
   sendTwoFactorOTP,
 } from "@/lib/emails/profile-settings";
 import { redis } from "@/lib/redis";
+import { questionUploadPlugin } from "@/lib/plugins/question-upload/server"; // ADD THIS
 
 export const auth = betterAuth({
   database: prismaAdapter(prisma, {
@@ -81,6 +82,15 @@ export const auth = betterAuth({
       defaultBanReason: "Violation of terms of service",
       bannedUserMessage:
         "Your account has been suspended. Please contact support if you believe this is an error.",
+    }),
+    questionUploadPlugin({
+      apiKey: process.env.QUESTION_UPLOAD_API_KEY!,
+      allowedRoles: ["admin", "exam_manager"],
+      enableRateLimit: true,
+      rateLimit: {
+        window: 3600, // 1 hour in seconds
+        max: 50, // 50 uploads per hour
+      },
     }),
     nextCookies(), // MUST be last plugin in array
   ],
