@@ -457,6 +457,8 @@ async function processFileUploads(
  * Save question to database
  *
  * Creates Question record with nested QuestionOption records.
+ * ALL SENSITIVE DATA IS ENCRYPTED AND STORED AS JSON - NO PLAINTEXT.
+ * Field names remain unchanged for backwards compatibility.
  * Uses Prisma's implicit transaction via nested create.
  * Automatically rolls back on error.
  *
@@ -474,33 +476,79 @@ async function saveQuestionToDatabase(
   userId: string
 ) {
   try {
+    // Import encryption utility
+    const { encrypt } = await import("@/lib/utils/encryption");
+
+    // ============================================
+    // ENCRYPT SENSITIVE DATA
+    // ============================================
+
+    // Encrypt question text (REQUIRED)
+    const encryptedQuestionText = encrypt(validatedData.question_text);
+
+    // Encrypt answer explanation (OPTIONAL)
+    const encryptedExplanation = validatedData.answer_explanation
+      ? encrypt(validatedData.answer_explanation)
+      : null;
+
+    // Encrypt each option text
+    const encryptedOptions = validatedData.options.map((opt) => {
+      const encryptedText = encrypt(opt.option_text);
+      return {
+        // Store encrypted data as JSON string in optionText field
+        optionText: JSON.stringify({
+          ciphertext: encryptedText.ciphertext,
+          iv: encryptedText.iv,
+          tag: encryptedText.tag,
+          salt: encryptedText.salt,
+        }),
+        optionImage: optionImagePaths.get(opt.order_index) || null,
+        isCorrect: opt.is_correct,
+        orderIndex: opt.order_index,
+      };
+    });
+
+    // ============================================
+    // SAVE TO DATABASE (ENCRYPTED JSON IN EXISTING FIELDS)
+    // ============================================
+
     // Prisma's nested create is already transactional
-    // No need for explicit $transaction
     const question = await prisma.question.create({
       data: {
-        // Map snake_case API fields to camelCase database fields
+        // Unencrypted metadata (for querying)
         examType: validatedData.exam_type,
         year: validatedData.year,
         subject: validatedData.subject,
         questionType: validatedData.question_type,
-        questionText: validatedData.question_text,
         questionImage: questionImagePath,
         questionPoint: validatedData.question_point,
-        answerExplanation: validatedData.answer_explanation || null,
         difficultyLevel: validatedData.difficulty_level,
         tags: validatedData.tags,
         timeLimit: validatedData.time_limit || null,
         language: validatedData.language,
         createdBy: userId,
 
-        // Create nested options (this is transactional by default)
+        // Store encrypted question text as JSON string
+        questionText: JSON.stringify({
+          ciphertext: encryptedQuestionText.ciphertext,
+          iv: encryptedQuestionText.iv,
+          tag: encryptedQuestionText.tag,
+          salt: encryptedQuestionText.salt,
+        }),
+
+        // Store encrypted answer explanation as JSON string (nullable)
+        answerExplanation: encryptedExplanation
+          ? JSON.stringify({
+              ciphertext: encryptedExplanation.ciphertext,
+              iv: encryptedExplanation.iv,
+              tag: encryptedExplanation.tag,
+              salt: encryptedExplanation.salt,
+            })
+          : null,
+
+        // Create nested options with encrypted text as JSON
         options: {
-          create: validatedData.options.map((opt) => ({
-            optionText: opt.option_text,
-            optionImage: optionImagePaths.get(opt.order_index) || null,
-            isCorrect: opt.is_correct,
-            orderIndex: opt.order_index,
-          })),
+          create: encryptedOptions,
         },
       },
       include: {
