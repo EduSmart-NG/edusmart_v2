@@ -188,7 +188,7 @@ export const questionUploadPlugin = (
 
             if (!user.role || !allowedRoles.includes(user.role)) {
               throw new APIError("FORBIDDEN", {
-                message: `Insufficient permissions. Required roles: ${allowedRoles.join(", ")}`,
+                message: `Insufficient permissions.`,
               });
             }
 
