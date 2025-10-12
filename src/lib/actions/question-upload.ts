@@ -1,13 +1,15 @@
 /**
  * Question Upload Server Action
  *
+ * UPDATED WITH RBAC PERMISSIONS
+ *
  * Secure server action for uploading questions with images.
  * Handles authentication, authorization, validation, file uploads,
  * and database transactions with automatic rollback on errors.
  *
  * Security Features:
  * - Session validation via Better Auth
- * - Role-based access control (admin/exam_manager only)
+ * - Permission-based access control (upload permission required)
  * - Rate limiting (50 uploads/hour per user)
  * - Input sanitization (Zod + DOMPurify)
  * - File validation (type, size, MIME)
@@ -34,15 +36,12 @@ import {
 } from "@/lib/utils/file-upload";
 import type { QuestionUploadResponse } from "@/types/question-api";
 import { ZodError } from "zod";
+// ✅ NEW: Import RBAC utilities
+import { hasPermission } from "@/lib/rbac/utils";
 
 // ============================================
 // CONSTANTS
 // ============================================
-
-/**
- * Allowed roles for question upload
- */
-const ALLOWED_ROLES = ["admin", "exam_manager"] as const;
 
 /**
  * Rate limiting configuration
@@ -99,11 +98,13 @@ interface FileUploadResult {
 // ============================================
 
 /**
- * Check session and authorization
+ * Check session and authorization with RBAC
+ *
+ * ✅ UPDATED: Uses Better Auth permission checking instead of role strings
  *
  * Validates:
  * - Session exists and is valid
- * - User has required role (admin or exam_manager)
+ * - User has question upload permission (admin or exam_manager)
  *
  * @returns User context with session details
  * @throws Error if unauthorized
@@ -126,24 +127,55 @@ async function checkAuthorizationAndSession(): Promise<UserContext> {
       );
     }
 
-    // Validate user role
-    const userRole = session.user.role || "user";
+    // ✅ NEW: Check permission using Better Auth RBAC
+    const canUpload = await hasPermission({ question: ["upload"] });
 
-    if (!ALLOWED_ROLES.includes(userRole as (typeof ALLOWED_ROLES)[number])) {
+    if (!canUpload) {
       throw new Error(
         JSON.stringify({
           code: "FORBIDDEN",
-          message: `Access denied. Required roles: ${ALLOWED_ROLES.join(", ")}`,
+          message: "You don't have permission to perform this operation.",
+        })
+      );
+    }
+
+    // Get user details from database for complete context
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        banned: true,
+      },
+    });
+
+    if (!user) {
+      throw new Error(
+        JSON.stringify({
+          code: "USER_NOT_FOUND",
+          message: "User account not found.",
+        })
+      );
+    }
+
+    // Check if user is banned
+    if (user.banned) {
+      throw new Error(
+        JSON.stringify({
+          code: "USER_BANNED",
+          message: "Your account has been banned.",
         })
       );
     }
 
     // Return user context
     return {
-      userId: session.user.id,
-      userEmail: session.user.email,
-      userRole,
-      userName: session.user.name,
+      userId: user.id,
+      userEmail: user.email,
+      userRole: user.role || "user",
+      userName: user.name,
     };
   } catch (error) {
     // Re-throw with proper error structure
@@ -607,6 +639,7 @@ async function logQuestionUpload(
       userId: context.userId,
       userEmail: context.userEmail,
       userName: context.userName,
+      userRole: context.userRole,
       action: "QUESTION_UPLOAD",
       questionId,
       examType,
@@ -641,7 +674,7 @@ async function logQuestionUpload(
  * Main entry point for question upload from Next.js client components.
  *
  * Process:
- * 1. Validate session and authorization
+ * 1. Validate session and check upload permission (RBAC)
  * 2. Check rate limit
  * 3. Parse FormData (question data + files)
  * 4. Validate question data with Zod
@@ -688,7 +721,7 @@ export async function uploadQuestion(
 
   try {
     // ============================================
-    // STEP 1: VALIDATE SESSION & AUTHORIZATION
+    // STEP 1: VALIDATE SESSION & CHECK PERMISSION (RBAC)
     // ============================================
     try {
       userContext = await checkAuthorizationAndSession();

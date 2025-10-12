@@ -13,6 +13,7 @@ import { columns } from "@/components/admin/user-column";
 import { DataTable } from "@/components/admin/data-table";
 import { listUsers } from "@/lib/actions/admin";
 import type { AdminUser, UserListResponse } from "@/types/admin";
+import Link from "next/link";
 
 async function getUsersData(): Promise<UserListResponse> {
   const result = await listUsers();
@@ -115,9 +116,9 @@ export default async function AdminUsersPage() {
             Manage users, roles, and permissions
           </p>
         </div>
-        <Button>
+        <Button variant="outline">
           <UserPlus className="mr-2 h-4 w-4" />
-          Add User
+          <Link href="/cp/admin-dashboard/users/new">Add User</Link>
         </Button>
       </div>
 

@@ -1,12 +1,14 @@
 /**
  * Question Upload Server Plugin
  *
+ * UPDATED WITH RBAC PERMISSIONS
+ *
  * Better Auth plugin for secure question upload with dual authentication:
  * 1. Session cookie (Better Auth session)
  * 2. API key (custom header validation)
  *
  * Features:
- * - Role-based access (admin/exam_manager only)
+ * - Permission-based access (question upload permission required)
  * - Rate limiting (50 uploads/hour)
  * - File upload support (question + option images)
  * - Input validation and sanitization
@@ -35,6 +37,8 @@ import {
 } from "@/lib/utils/file-upload";
 import type { UploadedFileInfo } from "@/types/question-api";
 import { ZodError } from "zod";
+// ✅ NEW: Import auth instance for permission checking
+import { auth } from "@/lib/auth";
 
 // ============================================
 // PLUGIN CONFIGURATION
@@ -49,12 +53,6 @@ export interface QuestionUploadPluginOptions {
    * Should be stored in environment variable
    */
   apiKey: string;
-
-  /**
-   * Allowed roles for question upload
-   * @default ["admin", "exam_manager"]
-   */
-  allowedRoles?: string[];
 
   /**
    * Enable rate limiting
@@ -78,7 +76,6 @@ export interface QuestionUploadPluginOptions {
 export const questionUploadPlugin = (
   options: QuestionUploadPluginOptions
 ): BetterAuthPlugin => {
-  const allowedRoles = options.allowedRoles || ["admin", "exam_manager"];
   const rateLimitConfig = options.rateLimit || {
     window: 3600, // 1 hour
     max: 50,
@@ -115,7 +112,7 @@ export const questionUploadPlugin = (
        * - API key (via custom header)
        *
        * Authorization:
-       * - admin or exam_manager role only
+       * - question:["upload"] permission required (admin or exam_manager)
        *
        * Request: multipart/form-data
        * - data: JSON stringified QuestionUploadInput
@@ -162,7 +159,7 @@ export const questionUploadPlugin = (
             }
 
             // ============================================
-            // STEP 3: VERIFY USER ROLE USING PRISMA
+            // STEP 3: VERIFY USER USING PRISMA
             // ============================================
             const user = await prisma.user.findUnique({
               where: { id: session.user.id },
@@ -186,9 +183,25 @@ export const questionUploadPlugin = (
               });
             }
 
-            if (!user.role || !allowedRoles.includes(user.role)) {
+            // ✅ NEW: CHECK PERMISSION USING BETTER AUTH RBAC
+            // Convert request headers to Headers object for Better Auth API
+            const headersObject = new Headers();
+            ctx.request.headers.forEach((value: string, key: string) => {
+              headersObject.set(key, value);
+            });
+
+            const permissionCheck = await auth.api.userHasPermission({
+              body: {
+                userId: session.user.id,
+                permissions: {
+                  question: ["upload"],
+                },
+              },
+            });
+
+            if (!permissionCheck?.success) {
               throw new APIError("FORBIDDEN", {
-                message: `Insufficient permissions.`,
+                message: "You don't have permission to perform this operation.",
               });
             }
 
@@ -375,6 +388,7 @@ export const questionUploadPlugin = (
                   timestamp: new Date().toISOString(),
                   userId: session.user.id,
                   userEmail: user.email,
+                  userRole: user.role,
                   questionId: question.id,
                   examType: validatedData.exam_type,
                   year: validatedData.year,

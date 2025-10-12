@@ -21,45 +21,28 @@ import type {
   RevokeUserSessionsInput,
   UserSession,
 } from "@/types/admin";
+// ✅ RBAC imports
+import { verifyAdminAccess as verifyAdminAccessRBAC } from "@/lib/rbac/utils";
+// ✅ Rate limiting imports
+import { checkRateLimit, RATE_LIMITS } from "@/lib/middleware/rate-limit";
 
 /**
- * Check if current user has admin role
- * @returns AdminActionResult with boolean data
+ * Verify that the current user has admin access
+ *
+ * ✅ UPDATED: Now uses RBAC utility
+ *
+ * @returns AdminActionResult with void data
  */
 async function verifyAdminAccess(): Promise<AdminActionResult<void>> {
   try {
-    const headersList = await headers();
-    const session = await auth.api.getSession({
-      headers: headersList,
-    });
+    const accessCheck = await verifyAdminAccessRBAC();
 
-    if (!session) {
-      throw new APIError("UNAUTHORIZED", {
-        message: "No active session found",
-      });
-    }
-
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { role: true, banned: true },
-    });
-
-    if (!user) {
-      throw new APIError("NOT_FOUND", {
-        message: "User not found",
-      });
-    }
-
-    if (user.banned) {
-      throw new APIError("FORBIDDEN", {
-        message: "Your account has been banned",
-      });
-    }
-
-    if (user.role !== "admin") {
-      throw new APIError("FORBIDDEN", {
-        message: "Insufficient permissions. Admin access required.",
-      });
+    if (!accessCheck.success) {
+      return {
+        success: false,
+        message: accessCheck.message || "Admin access denied",
+        code: "FORBIDDEN",
+      };
     }
 
     return {
@@ -87,6 +70,8 @@ async function verifyAdminAccess(): Promise<AdminActionResult<void>> {
 
 /**
  * List users with filtering, searching, and pagination
+ *
+ * ✅ UPDATED: RBAC + Rate limiting (100 requests per minute)
  * Audit: Logs admin viewing user list
  */
 export async function listUsers(
@@ -108,6 +93,21 @@ export async function listUsers(
     const session = await auth.api.getSession({
       headers: headersList,
     });
+
+    // ✅ Check rate limit
+    const rateLimitResult = await checkRateLimit(
+      "admin:list-users",
+      RATE_LIMITS.ADMIN_LIST_USERS,
+      session!.user.id
+    );
+
+    if (!rateLimitResult.allowed) {
+      return {
+        success: false,
+        message: `Rate limit exceeded. Retry in ${rateLimitResult.retryAfter}s`,
+        code: "RATE_LIMIT_EXCEEDED",
+      };
+    }
 
     // Use Better Auth admin API - query parameter is required, use empty object if not provided
     const result = await auth.api.listUsers({
@@ -155,6 +155,10 @@ export async function listUsers(
 
 /**
  * Create a new user (admin only)
+ *
+ * ✅ NOTE: This is the legacy function kept for backward compatibility
+ * Use createUserByAdmin from admin-create-user.ts for new implementations
+ *
  * Audit: Logs admin creating user
  */
 export async function createUser(
@@ -219,6 +223,8 @@ export async function createUser(
 
 /**
  * Set user role
+ *
+ * ✅ UPDATED: RBAC + Rate limiting (20 per 5 minutes)
  * Prevents admin from removing their own admin role
  * Audit: Logs role changes
  */
@@ -236,6 +242,21 @@ export async function setUserRole(
     const session = await auth.api.getSession({
       headers: headersList,
     });
+
+    // ✅ Check rate limit
+    const rateLimitResult = await checkRateLimit(
+      "admin:set-role",
+      RATE_LIMITS.ADMIN_SET_ROLE,
+      session!.user.id
+    );
+
+    if (!rateLimitResult.allowed) {
+      return {
+        success: false,
+        message: `Rate limit exceeded. Retry in ${rateLimitResult.retryAfter}s`,
+        code: "RATE_LIMIT_EXCEEDED",
+      };
+    }
 
     // Prevent admin from removing their own admin role
     if (session!.user.id === data.userId) {
@@ -296,6 +317,8 @@ export async function setUserRole(
 
 /**
  * Ban a user
+ *
+ * ✅ UPDATED: RBAC + Rate limiting (20 per 5 minutes)
  * Prevents admin from banning themselves
  * Audit: Logs ban actions
  */
@@ -313,6 +336,21 @@ export async function banUser(
     const session = await auth.api.getSession({
       headers: headersList,
     });
+
+    // ✅ Check rate limit
+    const rateLimitResult = await checkRateLimit(
+      "admin:ban-user",
+      RATE_LIMITS.ADMIN_BAN_USER,
+      session!.user.id
+    );
+
+    if (!rateLimitResult.allowed) {
+      return {
+        success: false,
+        message: `Rate limit exceeded. Retry in ${rateLimitResult.retryAfter}s`,
+        code: "RATE_LIMIT_EXCEEDED",
+      };
+    }
 
     // Prevent admin from banning themselves
     if (session!.user.id === data.userId) {
@@ -369,6 +407,8 @@ export async function banUser(
 
 /**
  * Unban a user
+ *
+ * ✅ UPDATED: RBAC (rate limit not needed for unban)
  * Audit: Logs unban actions
  */
 export async function unbanUser(
@@ -428,6 +468,8 @@ export async function unbanUser(
 
 /**
  * Impersonate a user
+ *
+ * ✅ UPDATED: RBAC (rate limit managed by Better Auth)
  * Creates a session as the target user
  * Audit: Logs impersonation actions
  */
@@ -499,6 +541,8 @@ export async function impersonateUser(
 
 /**
  * Stop impersonating user
+ *
+ *  : No RBAC check needed (anyone can stop impersonating)
  * Returns to admin session
  * Audit: Logs end of impersonation
  */
@@ -552,6 +596,8 @@ export async function stopImpersonating(): Promise<AdminActionResult<void>> {
 
 /**
  * Set user password (admin override)
+ *
+ * RBAC + Rate limiting (20 per 5 minutes)
  * Audit: Logs password resets
  */
 export async function setUserPassword(
@@ -568,6 +614,21 @@ export async function setUserPassword(
     const session = await auth.api.getSession({
       headers: headersList,
     });
+
+    // ✅ Check rate limit
+    const rateLimitResult = await checkRateLimit(
+      "admin:set-password",
+      RATE_LIMITS.ADMIN_SET_ROLE, // Reuse same limit
+      session!.user.id
+    );
+
+    if (!rateLimitResult.allowed) {
+      return {
+        success: false,
+        message: `Rate limit exceeded. Retry in ${rateLimitResult.retryAfter}s`,
+        code: "RATE_LIMIT_EXCEEDED",
+      };
+    }
 
     // Use Better Auth admin API
     await auth.api.setUserPassword({
@@ -613,6 +674,8 @@ export async function setUserPassword(
 
 /**
  * Update user details (admin)
+ *
+ * RBAC + Rate limiting (20 per 5 minutes)
  * Audit: Logs user updates
  */
 export async function updateUser(
@@ -629,6 +692,21 @@ export async function updateUser(
     const session = await auth.api.getSession({
       headers: headersList,
     });
+
+    // ✅ Check rate limit
+    const rateLimitResult = await checkRateLimit(
+      "admin:update-user",
+      RATE_LIMITS.ADMIN_SET_ROLE, // Reuse same limit
+      session!.user.id
+    );
+
+    if (!rateLimitResult.allowed) {
+      return {
+        success: false,
+        message: `Rate limit exceeded. Retry in ${rateLimitResult.retryAfter}s`,
+        code: "RATE_LIMIT_EXCEEDED",
+      };
+    }
 
     // Use Better Auth admin API
     await auth.api.adminUpdateUser({
@@ -674,6 +752,8 @@ export async function updateUser(
 
 /**
  * Remove user (hard delete)
+ *
+ * ✅ UPDATED: RBAC + Rate limiting (10 per 5 minutes - stricter)
  * Prevents deletion of last admin
  * Prevents admin from deleting themselves
  * Audit: Logs user deletions
@@ -692,6 +772,21 @@ export async function removeUser(
     const session = await auth.api.getSession({
       headers: headersList,
     });
+
+    // ✅ Check rate limit (stricter for deletions)
+    const rateLimitResult = await checkRateLimit(
+      "admin:remove-user",
+      RATE_LIMITS.ADMIN_CREATE_USER, // Same as create (10 per 5 min)
+      session!.user.id
+    );
+
+    if (!rateLimitResult.allowed) {
+      return {
+        success: false,
+        message: `Rate limit exceeded. Retry in ${rateLimitResult.retryAfter}s`,
+        code: "RATE_LIMIT_EXCEEDED",
+      };
+    }
 
     // Prevent admin from deleting themselves
     if (session!.user.id === data.userId) {
@@ -759,6 +854,8 @@ export async function removeUser(
 
 /**
  * List all sessions for a user
+ *
+ * ✅ UPDATED: RBAC (no rate limit needed for viewing)
  * Audit: Logs session viewing
  */
 export async function listUserSessions(
@@ -826,6 +923,8 @@ export async function listUserSessions(
 
 /**
  * Revoke a specific user session
+ *
+ * ✅ UPDATED: RBAC + Rate limiting (20 per 5 minutes)
  * Audit: Logs session revocations
  */
 export async function revokeUserSession(
@@ -842,6 +941,21 @@ export async function revokeUserSession(
     const session = await auth.api.getSession({
       headers: headersList,
     });
+
+    // ✅ Check rate limit
+    const rateLimitResult = await checkRateLimit(
+      "admin:revoke-session",
+      RATE_LIMITS.ADMIN_SET_ROLE,
+      session!.user.id
+    );
+
+    if (!rateLimitResult.allowed) {
+      return {
+        success: false,
+        message: `Rate limit exceeded. Retry in ${rateLimitResult.retryAfter}s`,
+        code: "RATE_LIMIT_EXCEEDED",
+      };
+    }
 
     // Get session details for audit log
     const targetSession = await prisma.session.findUnique({
@@ -887,6 +1001,8 @@ export async function revokeUserSession(
 
 /**
  * Revoke all sessions for a user
+ *
+ * ✅ UPDATED: RBAC + Rate limiting (20 per 5 minutes)
  * Audit: Logs bulk session revocations
  */
 export async function revokeUserSessions(
@@ -903,6 +1019,21 @@ export async function revokeUserSessions(
     const session = await auth.api.getSession({
       headers: headersList,
     });
+
+    // ✅ Check rate limit
+    const rateLimitResult = await checkRateLimit(
+      "admin:revoke-sessions",
+      RATE_LIMITS.ADMIN_SET_ROLE,
+      session!.user.id
+    );
+
+    if (!rateLimitResult.allowed) {
+      return {
+        success: false,
+        message: `Rate limit exceeded. Retry in ${rateLimitResult.retryAfter}s`,
+        code: "RATE_LIMIT_EXCEEDED",
+      };
+    }
 
     // Get target user for audit log
     const targetUser = await prisma.user.findUnique({
