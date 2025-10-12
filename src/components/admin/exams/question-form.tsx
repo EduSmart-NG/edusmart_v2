@@ -26,6 +26,8 @@ import {
   YEARS,
 } from "@/lib/utils/exam";
 import { AddQuestionFormProps } from "@/types/question";
+import { uploadQuestion } from "@/lib/actions/question-upload";
+import type { QuestionUploadInput } from "@/lib/validations/question";
 
 export default function AddQuestionForm({
   initialData = {},
@@ -103,6 +105,23 @@ export default function AddQuestionForm({
   ) => {
     const file = e.target.files?.[0];
     if (file) {
+      // Validate file size (10MB max)
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error("Image too large", {
+          description: "Question image must be less than 10MB",
+        });
+        return;
+      }
+
+      // Validate file type
+      const validTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+      if (!validTypes.includes(file.type)) {
+        toast.error("Invalid file type", {
+          description: "Only JPEG, PNG, WebP, and GIF images are allowed",
+        });
+        return;
+      }
+
       setQuestionImage(file);
       const reader = new FileReader();
       reader.onloadend = () => {
@@ -123,6 +142,23 @@ export default function AddQuestionForm({
   ) => {
     const file = e.target.files?.[0];
     if (file) {
+      // Validate file size (10MB max)
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error("Image too large", {
+          description: "Option image must be less than 10MB",
+        });
+        return;
+      }
+
+      // Validate file type
+      const validTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+      if (!validTypes.includes(file.type)) {
+        toast.error("Invalid file type", {
+          description: "Only JPEG, PNG, WebP, and GIF images are allowed",
+        });
+        return;
+      }
+
       const reader = new FileReader();
       reader.onloadend = () => {
         setOptions((prev) =>
@@ -310,6 +346,9 @@ export default function AddQuestionForm({
   };
 
   const handleSubmit = async (addAnother: boolean = false) => {
+    // Clear previous errors
+    setErrors({});
+
     if (!validateForm()) {
       toast.error("Please fix the errors in the form");
       return;
@@ -318,51 +357,200 @@ export default function AddQuestionForm({
     setIsLoading(true);
 
     try {
-      const questionData = {
-        exam_type: formData.exam_type,
+      // ============================================
+      // STEP 1: PREPARE QUESTION DATA
+      // ============================================
+      const questionData: QuestionUploadInput = {
+        exam_type: formData.exam_type as QuestionUploadInput["exam_type"],
         year: parseInt(formData.year),
         subject: formData.subject,
-        question_type: formData.question_type,
+        question_type:
+          formData.question_type as QuestionUploadInput["question_type"],
         question_text: formData.question_text,
-        question_image: questionImage
-          ? questionImage.name
-          : initialData.question_image || "",
-        options: options.map((opt) => ({
-          option_text: opt.option_text,
-          option_image: opt.option_image
-            ? opt.option_image.name
-            : opt.option_image_preview,
-          is_correct: opt.is_correct,
-        })),
         question_point: parseFloat(formData.question_point),
-        answer_explanation: formData.answer_explanation || "",
-        difficulty_level: formData.difficulty_level,
+        answer_explanation: formData.answer_explanation || undefined,
+        difficulty_level:
+          formData.difficulty_level as QuestionUploadInput["difficulty_level"],
         tags: formData.tags
-          ? formData.tags.split(",").map((tag) => tag.trim())
+          ? formData.tags
+              .split(",")
+              .map((tag) => tag.trim())
+              .filter(Boolean)
           : [],
-        time_limit: formData.time_limit ? parseInt(formData.time_limit) : null,
+        time_limit: formData.time_limit
+          ? parseInt(formData.time_limit)
+          : undefined,
         language: "en",
+        options: options.map((opt, index) => ({
+          option_text: opt.option_text,
+          is_correct: opt.is_correct,
+          order_index: index,
+          has_image: opt.option_image !== null || !!opt.option_image_preview,
+        })),
+        has_question_image: questionImage !== null,
       };
 
-      if (onSubmit) {
-        await onSubmit(questionData, addAnother);
-      } else {
-        console.log("Question Data:", questionData);
-        console.log("Question Image File:", questionImage);
-        console.log(
-          "Option Images:",
-          options.map((opt) => opt.option_image)
-        );
+      // ============================================
+      // STEP 2: CREATE FORMDATA
+      // ============================================
+      const formDataToSend = new FormData();
+
+      // Add question data as JSON string
+      formDataToSend.append("data", JSON.stringify(questionData));
+
+      // Add question image if exists
+      if (questionImage) {
+        formDataToSend.append("question_image", questionImage);
       }
 
-      toast.success("Question saved successfully!");
+      // Add option images if exist
+      options.forEach((option, index) => {
+        if (option.option_image) {
+          formDataToSend.append(`option_image_${index}`, option.option_image);
+        }
+      });
 
-      if (addAnother) {
-        resetForm();
+      // ============================================
+      // STEP 3: CALL SERVER ACTION
+      // ============================================
+      const result = await uploadQuestion(formDataToSend);
+
+      // ============================================
+      // STEP 4: HANDLE RESPONSE
+      // ============================================
+      if (result.success) {
+        // Success!
+        toast.success("Question uploaded successfully!", {
+          description: `Question ID: ${result.data.questionId}`,
+          duration: 5000,
+        });
+
+        // Call custom onSubmit if provided (for backward compatibility)
+        if (onSubmit) {
+          // Convert to old format for legacy onSubmit handler
+          const legacyQuestionData = {
+            exam_type: formData.exam_type,
+            year: parseInt(formData.year),
+            subject: formData.subject,
+            question_type: formData.question_type,
+            question_text: formData.question_text,
+            question_image: questionImage?.name || "",
+            options: options.map((opt) => ({
+              option_text: opt.option_text,
+              option_image:
+                opt.option_image?.name || opt.option_image_preview || "",
+              is_correct: opt.is_correct,
+            })),
+            question_point: parseFloat(formData.question_point),
+            answer_explanation: formData.answer_explanation || "",
+            difficulty_level: formData.difficulty_level,
+            tags: formData.tags
+              ? formData.tags
+                  .split(",")
+                  .map((tag) => tag.trim())
+                  .filter(Boolean)
+              : [],
+            time_limit: formData.time_limit
+              ? parseInt(formData.time_limit)
+              : null,
+            language: "en",
+          };
+
+          try {
+            await onSubmit(legacyQuestionData, addAnother);
+          } catch (error) {
+            console.error("Legacy onSubmit handler error:", error);
+            // Don't fail the upload if legacy handler fails
+          }
+        }
+
+        // Reset form if adding another
+        if (addAnother) {
+          resetForm();
+        }
+      } else {
+        // Error occurred
+        console.error("Upload failed:", result);
+
+        // Handle specific error codes
+        switch (result.code) {
+          case "NO_SESSION":
+            toast.error("Authentication required", {
+              description: "Please sign in to upload questions.",
+              duration: 5000,
+            });
+            break;
+
+          case "FORBIDDEN":
+            toast.error("Access denied", {
+              description: result.message,
+              duration: 5000,
+            });
+            break;
+
+          case "RATE_LIMIT_EXCEEDED":
+            toast.error("Rate limit exceeded", {
+              description: result.message,
+              duration: 8000,
+            });
+            break;
+
+          case "VALIDATION_ERROR":
+            toast.error("Validation failed", {
+              description: "Please check your input and try again",
+              duration: 5000,
+            });
+
+            // Set field-level errors if available
+            if (result.errors) {
+              setErrors(result.errors);
+
+              // Scroll to first error
+              const firstErrorField = Object.keys(result.errors)[0];
+              const errorElement = document.getElementById(firstErrorField);
+              if (errorElement) {
+                errorElement.scrollIntoView({
+                  behavior: "smooth",
+                  block: "center",
+                });
+              }
+            }
+            break;
+
+          case "UPLOAD_FAILED":
+            toast.error("File upload failed", {
+              description: result.message,
+              duration: 5000,
+            });
+            break;
+
+          case "DATABASE_ERROR":
+            toast.error("Database error", {
+              description: "Failed to save question. Please try again.",
+              duration: 5000,
+            });
+            break;
+
+          case "INTERNAL_ERROR":
+            toast.error("Server error", {
+              description: "An unexpected error occurred. Please try again.",
+              duration: 5000,
+            });
+            break;
+
+          default:
+            toast.error("Upload failed", {
+              description: result.message || "An unexpected error occurred",
+              duration: 5000,
+            });
+        }
       }
     } catch (error) {
-      console.error("Error saving question:", error);
-      toast.error("An unexpected error occurred. Please try again.");
+      console.error("Error submitting question:", error);
+      toast.error("Unexpected error", {
+        description: "Failed to upload question. Please try again.",
+        duration: 5000,
+      });
     } finally {
       setIsLoading(false);
     }
@@ -643,6 +831,9 @@ export default function AddQuestionForm({
                   </div>
                 )}
               </div>
+              <p className="text-xs text-gray-600">
+                Max 10MB. Supported: JPEG, PNG, WebP, GIF
+              </p>
             </div>
           </div>
 
@@ -692,6 +883,7 @@ export default function AddQuestionForm({
                             handleOptionCorrectToggle(index)
                           }
                           disabled={isLoading}
+                          className="cursor-pointer"
                         />
                       </div>
                       {formData.question_type === "multiple_choice" &&
@@ -766,6 +958,9 @@ export default function AddQuestionForm({
                           </div>
                         )}
                       </div>
+                      <p className="text-xs text-gray-600">
+                        Max 10MB per image. Supported: JPEG, PNG, WebP, GIF
+                      </p>
                     </>
                   )}
                 </div>
@@ -822,7 +1017,7 @@ export default function AddQuestionForm({
             >
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {isLoading
-                ? "Saving Question"
+                ? "Uploading Question..."
                 : initialData.question_image
                   ? "Update Question"
                   : "Add Question"}

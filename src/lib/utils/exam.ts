@@ -26,7 +26,14 @@ export const SUBJECTS = [
   "Yoruba",
 ];
 
-export const EXAM_TYPES = ["WAEC", "JAMB", "NECO", "GCE"];
+export const EXAM_TYPES = [
+  "WAEC",
+  "JAMB",
+  "NECO",
+  "GCE",
+  "NABTEB",
+  "POST_UTME",
+];
 
 export const DIFFICULTY_LEVELS = ["easy", "medium", "hard"];
 
