@@ -33,9 +33,9 @@ model User {
   banReason  String?   @db.Text
   banExpires DateTime?
 
-  // NEW: Admin user creation tracking fields
-  passwordChangeRequired Boolean @default(false) // Force password change on first login
-  createdBy              String? // Admin user ID who created this account
+  // Admin user creation tracking fields
+  passwordChangeRequired Boolean @default(false)
+  createdBy              String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -49,8 +49,8 @@ model User {
   @@index([displayUsername])
   @@index([role])
   @@index([banned])
-  @@index([passwordChangeRequired]) // NEW: Index for first-login queries
-  @@index([createdBy]) // NEW: Index for audit queries
+  @@index([passwordChangeRequired])
+  @@index([createdBy])
   @@map("user")
 }
 
@@ -134,23 +134,29 @@ model KeyValueStore {
 }
 
 // ============================================
-// QUESTION BANK MODELS
+// QUESTION BANK MODELS (VALUES ENCRYPTED, NAMES UNCHANGED)
 // ============================================
 
 model Question {
-  id                String  @id @default(cuid())
-  examType          String  @map("exam_type")
-  year              Int
-  subject           String
-  questionType      String  @map("question_type") // multiple_choice, true_false, essay, fill_in_blank
-  questionText      String  @map("question_text") @db.Text
-  questionImage     String? @map("question_image")
-  questionPoint     Float   @map("question_point")
+  id           String @id @default(cuid())
+  examType     String @map("exam_type")
+  year         Int
+  subject      String
+  questionType String @map("question_type") // multiple_choice, true_false, essay, fill_in_blank
+
+  // Encrypted value stored as JSON: { ciphertext, iv, tag, salt }
+  questionText String @map("question_text") @db.Text
+
+  questionImage String? @map("question_image")
+  questionPoint Float   @map("question_point")
+
+  // Encrypted value stored as JSON: { ciphertext, iv, tag, salt } (nullable)
   answerExplanation String? @map("answer_explanation") @db.Text
-  difficultyLevel   String  @map("difficulty_level") // easy, medium, hard
-  tags              Json // Array of strings for search/filtering
-  timeLimit         Int?    @map("time_limit") // In seconds
-  language          String  @default("en")
+
+  difficultyLevel String @map("difficulty_level") // easy, medium, hard
+  tags            Json // Array of strings for search/filtering
+  timeLimit       Int?   @map("time_limit") // In seconds
+  language        String @default("en")
 
   // Audit fields
   createdBy String    @map("created_by") // Admin/exam_manager user ID
@@ -171,9 +177,12 @@ model Question {
 }
 
 model QuestionOption {
-  id          String  @id @default(cuid())
-  questionId  String  @map("question_id")
-  optionText  String  @map("option_text") @db.Text
+  id         String @id @default(cuid())
+  questionId String @map("question_id")
+
+  // Encrypted value stored as JSON: { ciphertext, iv, tag, salt }
+  optionText String @map("option_text") @db.Text
+
   optionImage String? @map("option_image")
   isCorrect   Boolean @map("is_correct")
   orderIndex  Int     @map("order_index") // For maintaining option order (A, B, C, D)

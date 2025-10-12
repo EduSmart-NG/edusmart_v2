@@ -9,7 +9,7 @@ import {
   sendTwoFactorOTP,
 } from "@/lib/emails/profile-settings";
 import { redis } from "@/lib/redis";
-import { questionUploadPlugin } from "@/lib/plugins/question-upload/server"; // ADD THIS
+import { questionUploadPlugin } from "@/lib/plugins/question-upload/server";
 
 export const auth = betterAuth({
   database: prismaAdapter(prisma, {
