@@ -19,6 +19,8 @@ export type UserRole = (typeof USER_ROLES)[number];
  *
  * Security features:
  * - Email format validation and normalization
+ * - Username format validation (lowercase, alphanumeric, underscores)
+ * - Username length constraints (3-20 characters)
  * - Name length constraints (prevent DoS via large inputs)
  * - Role enum validation (prevent invalid role injection)
  * - All inputs sanitized by Zod
@@ -28,6 +30,7 @@ export type UserRole = (typeof USER_ROLES)[number];
  * const result = createUserSchema.safeParse({
  *   email: "user@example.com",
  *   name: "John Doe",
+ *   username: "john_doe",
  *   role: "exam_manager"
  * });
  * ```
@@ -60,6 +63,33 @@ export const createUserSchema = z.object({
     .trim(),
 
   /**
+   * User's username
+   * - Must be 3-20 characters
+   * - Only lowercase letters, numbers, and underscores
+   * - Cannot start or end with underscore
+   * - No consecutive underscores
+   * - Must be unique (checked at database level)
+   */
+  username: z
+    .string()
+    .min(3, "Username must be at least 3 characters")
+    .max(20, "Username must not exceed 20 characters")
+    .regex(
+      /^[a-z0-9_]+$/,
+      "Username can only contain lowercase letters, numbers, and underscores"
+    )
+    .refine(
+      (val) => !val.startsWith("_") && !val.endsWith("_"),
+      "Username cannot start or end with underscore"
+    )
+    .refine(
+      (val) => !val.includes("__"),
+      "Username cannot contain consecutive underscores"
+    )
+    .toLowerCase()
+    .trim(),
+
+  /**
    * User's role in the system
    * - Must be one of: user, exam_manager, admin
    * - Validated against USER_ROLES enum
@@ -78,7 +108,7 @@ export const createUserSchema = z.object({
  * @example
  * ```typescript
  * async function createUser(data: CreateUserAdminInput) {
- *   // data is fully typed with email, name, and role
+ *   // data is fully typed with email, name, username, and role
  * }
  * ```
  */

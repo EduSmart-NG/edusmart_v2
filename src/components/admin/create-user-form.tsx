@@ -32,6 +32,7 @@ import { Card } from "../ui/card";
 interface FormState {
   name: string;
   email: string;
+  username: string;
   role: UserRole | "";
 }
 
@@ -41,28 +42,10 @@ interface FormState {
 interface FormErrors {
   name?: string;
   email?: string;
+  username?: string;
   role?: string;
 }
 
-/**
- * Create User Form Component
- *
- * Allows administrators to create new user accounts with the following features:
- * - Real-time validation with Zod schema
- * - Field-specific error messages
- * - Loading states during submission
- * - Success/error toast notifications
- * - Automatic redirect to users list on success
- * - Consistent styling with existing forms
- *
- * Security:
- * - Client-side validation (UX)
- * - Server-side validation (security)
- * - Password never handled by client
- * - Admin access verified server-side
- *
- * @returns Client-side form component
- */
 export default function CreateUserForm() {
   const router = useRouter();
 
@@ -70,12 +53,14 @@ export default function CreateUserForm() {
   const [formData, setFormData] = useState<FormState>({
     name: "",
     email: "",
+    username: "",
     role: "",
   });
 
   // UI state
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
+  const [submitAction, setSubmitAction] = useState<"add-more" | "exit">("exit");
 
   /**
    * Handle input changes for text fields
@@ -89,6 +74,25 @@ export default function CreateUserForm() {
       setErrors((prev) => {
         const newErrors = { ...prev };
         delete newErrors[field];
+        return newErrors;
+      });
+    }
+  };
+
+  /**
+   * Handle username input with validation
+   * Only allows lowercase letters, numbers, and underscores
+   */
+  const handleUsernameChange = (value: string): void => {
+    // Auto-convert to lowercase and remove invalid characters
+    const sanitized = value.toLowerCase().replace(/[^a-z0-9_]/g, "");
+    setFormData((prev) => ({ ...prev, username: sanitized }));
+
+    // Clear username error when user starts typing
+    if (errors.username) {
+      setErrors((prev) => {
+        const newErrors = { ...prev };
+        delete newErrors.username;
         return newErrors;
       });
     }
@@ -140,9 +144,13 @@ export default function CreateUserForm() {
    * Validates data, calls server action, and handles response
    */
   const handleSubmit = async (
-    e: React.FormEvent<HTMLFormElement>
+    e: React.FormEvent<HTMLFormElement>,
+    action: "add-more" | "exit"
   ): Promise<void> => {
     e.preventDefault();
+
+    // Set the action type
+    setSubmitAction(action);
 
     // Clear previous errors
     setErrors({});
@@ -162,16 +170,29 @@ export default function CreateUserForm() {
       // Call server action
       const result = await createUserByAdmin(formData as CreateUserAdminInput);
 
-      if (result.success) {
-        // Success - show toast and redirect
+      if (result.success && result.data) {
+        // Success - show toast with username
         toast.success("User created successfully", {
-          description: `${formData.email} has been added to the system. Check console for temporary password.`,
+          description: `${formData.email} has been added with username: ${formData.username}. Check console for temporary password.`,
+          duration: 5000,
         });
 
-        // Redirect to users list after short delay
-        setTimeout(() => {
-          router.push("/cp/users");
-        }, 1500);
+        if (action === "add-more") {
+          // Reset form to add another user
+          setFormData({
+            name: "",
+            email: "",
+            username: "",
+            role: "",
+          });
+          setErrors({});
+          setIsLoading(false);
+        } else {
+          // Redirect to users list after short delay
+          setTimeout(() => {
+            router.replace("/cp/admin-dashboard/users");
+          }, 1500);
+        }
       } else {
         // Server-side error
         toast.error(result.message || "Failed to create user", {
@@ -198,7 +219,11 @@ export default function CreateUserForm() {
         // Handle specific error codes
         if (result.code === "DUPLICATE_EMAIL") {
           setErrors({ email: "This email is already registered" });
+        } else if (result.code === "DUPLICATE_USERNAME") {
+          setErrors({ username: "This username is already taken" });
         }
+
+        setIsLoading(false);
       }
     } catch (error) {
       // Unexpected error
@@ -206,13 +231,12 @@ export default function CreateUserForm() {
       toast.error("An unexpected error occurred", {
         description: "Please try again later.",
       });
-    } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={(e) => e.preventDefault()} className="space-y-6">
       <Card className="p-6">
         <div className="space-y-6">
           {/* Name Field */}
@@ -259,6 +283,31 @@ export default function CreateUserForm() {
             {errors.email && (
               <p id="email-error" className="text-xs text-red-500">
                 {errors.email}
+              </p>
+            )}
+          </div>
+
+          {/* Username Field */}
+          <div className="grid gap-3">
+            <Label htmlFor="username">
+              Username <span className="text-red-500">*</span>
+            </Label>
+            <Input
+              id="username"
+              type="text"
+              placeholder="john_doe"
+              value={formData.username}
+              onChange={(e) => handleUsernameChange(e.target.value)}
+              disabled={isLoading}
+              className={errors.username ? "border-red-500" : ""}
+              aria-invalid={!!errors.username}
+              aria-describedby={errors.username ? "username-error" : undefined}
+              maxLength={20}
+            />
+
+            {errors.username && (
+              <p id="username-error" className="text-xs text-red-500">
+                {errors.username}
               </p>
             )}
           </div>
@@ -323,20 +372,18 @@ export default function CreateUserForm() {
             </svg>
           </div>
           <div className="flex-1 space-y-1">
-            <h3 className="text-amber-800 dark:text-amber-300">
+            <h4 className="text-amber-800 dark:text-amber-300">
               Temporary Password
-            </h3>
+            </h4>
             <p className="text-sm text-amber-700 dark:text-amber-400">
-              A secure temporary password will be automatically generated. The
-              password will be logged to the console and the user will be
-              required to change it on their first login.
+              A secure temporary password has been sent to the user
             </p>
           </div>
         </div>
       </div>
 
       {/* Form Actions */}
-      <div className="flex items-center justify-end gap-4">
+      <div className="flex items-center justify-between gap-4">
         <Button
           type="button"
           variant="outline"
@@ -345,19 +392,55 @@ export default function CreateUserForm() {
         >
           Cancel
         </Button>
-        <Button type="submit" disabled={isLoading}>
-          {isLoading ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Creating User...
-            </>
-          ) : (
-            <>
-              <UserPlus className="mr-2 h-4 w-4" />
-              Create User
-            </>
-          )}
-        </Button>
+
+        <div className="flex gap-3">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={(e: React.MouseEvent<HTMLButtonElement>) =>
+              handleSubmit(
+                e as unknown as React.FormEvent<HTMLFormElement>,
+                "add-more"
+              )
+            }
+            disabled={isLoading}
+          >
+            {isLoading && submitAction === "add-more" ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Creating...
+              </>
+            ) : (
+              <>
+                <UserPlus className="mr-2 h-4 w-4" />
+                Save & Add More
+              </>
+            )}
+          </Button>
+
+          <Button
+            type="button"
+            onClick={(e: React.MouseEvent<HTMLButtonElement>) =>
+              handleSubmit(
+                e as unknown as React.FormEvent<HTMLFormElement>,
+                "exit"
+              )
+            }
+            disabled={isLoading}
+          >
+            {isLoading && submitAction === "exit" ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Creating...
+              </>
+            ) : (
+              <>
+                <UserPlus className="mr-2 h-4 w-4" />
+                Save & Exit
+              </>
+            )}
+          </Button>
+        </div>
       </div>
     </form>
   );

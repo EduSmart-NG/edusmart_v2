@@ -1,28 +1,11 @@
 import { Metadata } from "next";
 import CreateUserForm from "@/components/admin/create-user-form";
 
-/**
- * Metadata for Create User page
- * Improves SEO and browser tab display
- */
 export const metadata: Metadata = {
   title: "Create User | Admin Panel",
   description: "Create a new user account with admin privileges",
 };
 
-/**
- * Create User Page - Server Component
- *
- * This page allows administrators to create new user accounts.
- * A secure random password will be generated and logged to the console.
- *
- * Security:
- * - Protected by admin layout (cp/layout.tsx)
- * - Only accessible to users with admin role
- * - Non-admin users will get 404
- *
- * @returns Server-rendered create user page
- */
 export default function CreateUserPage() {
   return (
     <div className="space-y-6">
@@ -52,7 +35,7 @@ export default function CreateUserPage() {
             </svg>
           </div>
           <div className="flex-1 space-y-1">
-            <h3 className="text-primary">Security Notice</h3>
+            <h4 className="text-primary">Security Notice</h4>
             <p className="text-sm text-primary">
               The generated temporary password will be sent to the user, please
               copy the password from the console and securely share it with the
