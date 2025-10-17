@@ -11,6 +11,7 @@ import {
 import { redis } from "@/lib/redis";
 import { questionUploadPlugin } from "@/lib/plugins/question-upload/server";
 import { ac, roles } from "@/lib/rbac/permissions";
+import { examUploadPlugin } from "./plugins/exam-upload/server";
 
 export const auth = betterAuth({
   database: prismaAdapter(prisma, {
@@ -92,6 +93,14 @@ export const auth = betterAuth({
       rateLimit: {
         window: 3600, // 1 hour in seconds
         max: 50, // 50 uploads per hour
+      },
+    }),
+    examUploadPlugin({
+      apiKey: process.env.EXAM_API_KEY!,
+      enableRateLimit: true,
+      rateLimit: {
+        window: 300, // 5 minutes
+        max: 10, // 10 exam creations per 5 minutes
       },
     }),
     nextCookies(), // MUST be last plugin in array
