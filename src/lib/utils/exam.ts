@@ -50,9 +50,4 @@ export const QUESTION_TYPES = [
 export const optionLabels = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"];
 
 export const EXAM_STATUS = ["draft", "published", "archived"];
-export const EXAM_CATEGORIES = [
-  "certification",
-  "practice",
-  "mock",
-  "assessment",
-];
+export const EXAM_CATEGORIES = ["practice", "challenge", "recruitment", "test"];

@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { useRouter } from "next/navigation";
+import { useRecaptchaToken } from "@/hooks/use-recaptcha-token";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,102 +31,63 @@ import {
   SUBJECTS,
   YEARS,
 } from "@/lib/utils/exam";
-import { CreateExamFormProps, Question } from "@/types/exam";
+import {
+  createExam,
+  updateExam,
+  searchQuestions,
+} from "@/lib/actions/exam-upload";
+import type { QuestionDecrypted } from "@/types/exam-api";
 
-// Dummy questions for demonstration
-const DUMMY_QUESTIONS: Question[] = [
-  {
-    question_id: "q1",
-    exam_type: "WAEC",
-    year: 2024,
-    subject: "Mathematics",
-    question_text: "What is the value of x in the equation 2x + 5 = 15?",
-    question_type: "multiple_choice",
-    question_image: "",
-    options: [
-      { option_text: "3", option_image: "", is_correct: false },
-      { option_text: "5", option_image: "", is_correct: true },
-      { option_text: "7", option_image: "", is_correct: false },
-      { option_text: "10", option_image: "", is_correct: false },
-    ],
-    question_point: 2,
-    answer_explanation:
-      "Subtract 5 from both sides: 2x = 10, then divide by 2: x = 5",
-    difficulty_level: "easy",
-    tags: ["algebra", "equations"],
-    time_limit: 120,
-    language: "en",
-  },
-  {
-    question_id: "q2",
-    exam_type: "WAEC",
-    year: 2024,
-    subject: "Mathematics",
-    question_text: "Is the square root of 16 equal to 4?",
-    question_type: "true_false",
-    question_image: "",
-    options: [
-      { option_text: "True", option_image: "", is_correct: true },
-      { option_text: "False", option_image: "", is_correct: false },
-    ],
-    question_point: 1,
-    answer_explanation: "The square root of 16 is 4 because 4 × 4 = 16",
-    difficulty_level: "easy",
-    tags: ["square roots", "basic math"],
-    time_limit: 60,
-    language: "en",
-  },
-  {
-    question_id: "q3",
-    exam_type: "JAMB",
-    year: 2023,
-    subject: "Physics",
-    question_text: "What is the SI unit of force?",
-    question_type: "multiple_choice",
-    question_image: "",
-    options: [
-      { option_text: "Joule", option_image: "", is_correct: false },
-      { option_text: "Newton", option_image: "", is_correct: true },
-      { option_text: "Watt", option_image: "", is_correct: false },
-      { option_text: "Pascal", option_image: "", is_correct: false },
-    ],
-    question_point: 2,
-    answer_explanation:
-      "The Newton (N) is the SI unit of force, named after Isaac Newton",
-    difficulty_level: "easy",
-    tags: ["units", "mechanics"],
-    time_limit: 90,
-    language: "en",
-  },
-  {
-    question_id: "q4",
-    exam_type: "JAMB",
-    year: 2023,
-    subject: "Physics",
-    question_text: "Does light travel faster than sound?",
-    question_type: "true_false",
-    question_image: "",
-    options: [
-      { option_text: "True", option_image: "", is_correct: true },
-      { option_text: "False", option_image: "", is_correct: false },
-    ],
-    question_point: 1,
-    answer_explanation:
-      "Light travels at approximately 299,792,458 m/s while sound travels at about 343 m/s in air",
-    difficulty_level: "easy",
-    tags: ["waves", "speed"],
-    time_limit: 60,
-    language: "en",
-  },
-];
+// ============================================
+// TYPES
+// ============================================
+
+interface CreateExamFormProps {
+  initialData?: Partial<{
+    exam_type: string;
+    subject: string;
+    year: string;
+    title: string;
+    description: string;
+    duration: string;
+    passing_score: string;
+    max_attempts: string;
+    shuffle_questions: boolean;
+    randomize_options: boolean;
+    is_public: boolean;
+    is_free: boolean;
+    status: string;
+    category: string;
+    start_date: string;
+    end_date: string;
+    questions: QuestionDecrypted[];
+  }>;
+  onSubmit?: (data: { examId: string; exam: unknown }) => Promise<void>;
+  isEditing?: boolean;
+  examId?: string;
+}
+
+// ============================================
+// COMPONENT
+// ============================================
 
 export default function CreateExamForm({
   initialData = {},
   onSubmit,
   isEditing = false,
+  examId,
 }: CreateExamFormProps) {
+  const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [showQuestionSearch, setShowQuestionSearch] = useState(false);
+  const [isLoadingQuestions, setIsLoadingQuestions] = useState(false);
+
+  // reCAPTCHA hook
+  const {
+    generateToken,
+    isLoading: isRecaptchaLoading,
+    error: recaptchaError,
+  } = useRecaptchaToken();
 
   const [formData, setFormData] = useState({
     exam_type: initialData.exam_type || "",
@@ -149,11 +112,15 @@ export default function CreateExamForm({
     exam_type: "",
     year: "",
     subject: "",
+    difficulty_level: "",
   });
 
-  const [selectedQuestions, setSelectedQuestions] = useState<Question[]>(
-    initialData.questions || []
-  );
+  const [availableQuestions, setAvailableQuestions] = useState<
+    QuestionDecrypted[]
+  >([]);
+  const [selectedQuestions, setSelectedQuestions] = useState<
+    QuestionDecrypted[]
+  >(initialData.questions || []);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [startDate, setStartDate] = useState<Date | undefined>(
     initialData.start_date ? new Date(initialData.start_date) : undefined
@@ -164,88 +131,98 @@ export default function CreateExamForm({
   const [startDateOpen, setStartDateOpen] = useState(false);
   const [endDateOpen, setEndDateOpen] = useState(false);
 
-  // Update dates when initialData changes
-  useEffect(() => {
-    if (initialData.start_date) {
-      setStartDate(new Date(initialData.start_date));
-    }
-    if (initialData.end_date) {
-      setEndDate(new Date(initialData.end_date));
-    }
-  }, [initialData.start_date, initialData.end_date]);
+  // Memoize the total points calculation
+  const totalPoints = useMemo(() => {
+    return selectedQuestions.reduce((sum, q) => sum + q.questionPoint, 0);
+  }, [selectedQuestions]);
 
-  const handleInputChange = (field: string, value: string | boolean) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-    if (errors[field]) {
+  // Memoized fetch questions function
+  const fetchQuestions = useCallback(async () => {
+    setIsLoadingQuestions(true);
+    try {
+      const filters: Record<string, string | number> = {
+        limit: 50,
+        offset: 0,
+      };
+
+      if (questionFilters.exam_type)
+        filters.exam_type = questionFilters.exam_type;
+      if (questionFilters.year) filters.year = parseInt(questionFilters.year);
+      if (questionFilters.subject) filters.subject = questionFilters.subject;
+      if (questionFilters.difficulty_level)
+        filters.difficulty_level = questionFilters.difficulty_level;
+
+      const result = await searchQuestions(filters);
+
+      if (result.success && "data" in result) {
+        setAvailableQuestions(result.data.questions);
+      } else {
+        toast.error(result.message || "Failed to load questions");
+        setAvailableQuestions([]);
+      }
+    } catch (error) {
+      console.error("Error fetching questions:", error);
+      toast.error("Failed to load questions");
+      setAvailableQuestions([]);
+    } finally {
+      setIsLoadingQuestions(false);
+    }
+  }, [questionFilters]);
+
+  // Memoized handlers
+  const handleInputChange = useCallback(
+    (field: string, value: string | boolean) => {
+      setFormData((prev) => ({ ...prev, [field]: value }));
       setErrors((prev) => {
-        const newErrors = { ...prev };
-        delete newErrors[field];
-        return newErrors;
+        if (prev[field]) {
+          const newErrors = { ...prev };
+          delete newErrors[field];
+          return newErrors;
+        }
+        return prev;
       });
-    }
-  };
+    },
+    []
+  );
 
-  const handleFilterChange = (field: string, value: string) => {
+  const handleFilterChange = useCallback((field: string, value: string) => {
     setQuestionFilters((prev) => ({ ...prev, [field]: value }));
-  };
+  }, []);
 
-  const getFilteredQuestions = () => {
-    return DUMMY_QUESTIONS.filter((q) => {
-      if (
-        questionFilters.exam_type &&
-        q.exam_type !== questionFilters.exam_type
-      )
-        return false;
-      if (questionFilters.year && q.year.toString() !== questionFilters.year)
-        return false;
-      if (questionFilters.subject && q.subject !== questionFilters.subject)
-        return false;
-      return true;
-    });
-  };
-
-  const toggleQuestionSelection = (question: Question) => {
+  const toggleQuestionSelection = useCallback((question: QuestionDecrypted) => {
     setSelectedQuestions((prev) => {
-      const isSelected = prev.some(
-        (q) => q.question_id === question.question_id
-      );
+      const isSelected = prev.some((q) => q.id === question.id);
       if (isSelected) {
-        return prev.filter((q) => q.question_id !== question.question_id);
+        return prev.filter((q) => q.id !== question.id);
       } else {
         return [...prev, question];
       }
     });
-  };
+  }, []);
 
-  const removeQuestion = (questionId: string) => {
-    setSelectedQuestions((prev) =>
-      prev.filter((q) => q.question_id !== questionId)
-    );
-  };
+  const removeQuestion = useCallback((questionId: string) => {
+    setSelectedQuestions((prev) => prev.filter((q) => q.id !== questionId));
+  }, []);
 
-  const handleStartDateSelect = (date: Date | undefined) => {
+  const handleStartDateSelect = useCallback((date: Date | undefined) => {
     if (date) {
       setStartDate(date);
       const formattedDate = date.toISOString();
-      handleInputChange("start_date", formattedDate);
+      setFormData((prev) => ({ ...prev, start_date: formattedDate }));
       setStartDateOpen(false);
     }
-  };
+  }, []);
 
-  const handleEndDateSelect = (date: Date | undefined) => {
+  const handleEndDateSelect = useCallback((date: Date | undefined) => {
     if (date) {
       setEndDate(date);
       const formattedDate = date.toISOString();
-      handleInputChange("end_date", formattedDate);
+      setFormData((prev) => ({ ...prev, end_date: formattedDate }));
       setEndDateOpen(false);
     }
-  };
+  }, []);
 
-  const calculateTotalPoints = () => {
-    return selectedQuestions.reduce((sum, q) => sum + q.question_point, 0);
-  };
-
-  const validateForm = (): boolean => {
+  const validateForm = useCallback((): boolean => {
     const newErrors: Record<string, string> = {};
 
     if (!formData.exam_type) newErrors.exam_type = "Exam type is required";
@@ -261,59 +238,195 @@ export default function CreateExamForm({
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  };
+  }, [formData, selectedQuestions.length]);
 
-  const handleSubmit = async () => {
-    if (!validateForm()) {
-      toast.error("Please fix the errors in the form");
-      return;
-    }
+  const resetForm = useCallback(() => {
+    setFormData({
+      exam_type: initialData.exam_type || "",
+      subject: initialData.subject || "",
+      year: initialData.year || "",
+      title: initialData.title || "",
+      description: initialData.description || "",
+      duration: initialData.duration || "",
+      passing_score: initialData.passing_score || "",
+      max_attempts: initialData.max_attempts || "",
+      shuffle_questions: initialData.shuffle_questions || false,
+      randomize_options: initialData.randomize_options || false,
+      is_public: initialData.is_public || false,
+      is_free: initialData.is_free || false,
+      status: initialData.status || "draft",
+      category: initialData.category || "",
+      start_date: initialData.start_date || "",
+      end_date: initialData.end_date || "",
+    });
 
-    setIsLoading(true);
+    setSelectedQuestions(initialData.questions || []);
+    setStartDate(
+      initialData.start_date ? new Date(initialData.start_date) : undefined
+    );
+    setEndDate(
+      initialData.end_date ? new Date(initialData.end_date) : undefined
+    );
+    setErrors({});
+  }, [initialData]);
 
-    try {
-      const examData = {
-        exam_type: formData.exam_type,
-        subject: formData.subject,
-        year: parseInt(formData.year),
-        title: formData.title,
-        description: formData.description || "",
-        duration: parseInt(formData.duration),
-        passing_score: formData.passing_score
-          ? parseFloat(formData.passing_score)
-          : null,
-        max_attempts: formData.max_attempts
-          ? parseInt(formData.max_attempts)
-          : null,
-        shuffle_questions: formData.shuffle_questions,
-        randomize_options: formData.randomize_options,
-        is_public: formData.is_public,
-        is_free: formData.is_free,
-        status: formData.status,
-        category: formData.category || "",
-        start_date: formData.start_date || null,
-        end_date: formData.end_date || null,
-        questions: selectedQuestions,
-      };
+  const handleSubmit = useCallback(
+    async (addAnother: boolean = false) => {
+      // Clear previous errors
+      setErrors({});
 
-      if (onSubmit) {
-        await onSubmit(examData);
-      } else {
-        console.log("Exam Data:", examData);
+      if (!validateForm()) {
+        toast.error("Please fix the errors in the form");
+        return;
       }
 
-      toast.success(
-        isEditing ? "Exam updated successfully!" : "Exam created successfully!"
-      );
-    } catch (error) {
-      console.error("Error saving exam:", error);
-      toast.error("An unexpected error occurred. Please try again.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
+      setIsLoading(true);
 
-  const filteredQuestions = getFilteredQuestions();
+      try {
+        // Generate reCAPTCHA token
+        const action = isEditing ? "exam_update" : "exam_create";
+        const recaptchaToken = await generateToken(action);
+
+        if (!recaptchaToken) {
+          toast.error(
+            recaptchaError || "Failed to verify reCAPTCHA. Please try again."
+          );
+          setIsLoading(false);
+          return;
+        }
+
+        // Create FormData
+        const formDataToSend = new FormData();
+        formDataToSend.append("exam_type", formData.exam_type);
+        formDataToSend.append("subject", formData.subject);
+        formDataToSend.append("year", formData.year);
+        formDataToSend.append("title", formData.title);
+        formDataToSend.append("description", formData.description || "");
+        formDataToSend.append("duration", formData.duration);
+        formDataToSend.append("passing_score", formData.passing_score || "");
+        formDataToSend.append("max_attempts", formData.max_attempts || "");
+        formDataToSend.append(
+          "shuffle_questions",
+          String(formData.shuffle_questions)
+        );
+        formDataToSend.append(
+          "randomize_options",
+          String(formData.randomize_options)
+        );
+        formDataToSend.append("is_public", String(formData.is_public));
+        formDataToSend.append("is_free", String(formData.is_free));
+        formDataToSend.append("status", formData.status);
+        formDataToSend.append("category", formData.category || "");
+        formDataToSend.append("start_date", formData.start_date || "");
+        formDataToSend.append("end_date", formData.end_date || "");
+        formDataToSend.append(
+          "question_ids",
+          JSON.stringify(selectedQuestions.map((q) => q.id))
+        );
+
+        // Log data being sent for debugging
+        console.log("Form data being sent:", {
+          exam_type: formData.exam_type,
+          subject: formData.subject,
+          year: formData.year,
+          title: formData.title,
+          description: formData.description,
+          duration: formData.duration,
+          passing_score: formData.passing_score,
+          max_attempts: formData.max_attempts,
+          status: formData.status,
+          category: formData.category,
+          start_date: formData.start_date,
+          end_date: formData.end_date,
+          question_count: selectedQuestions.length,
+        });
+
+        // Call appropriate server action
+        const result =
+          isEditing && examId
+            ? await updateExam(examId, formDataToSend, recaptchaToken)
+            : await createExam(formDataToSend, recaptchaToken);
+
+        if (result.success) {
+          toast.success(result.message, {
+            description: `Exam ID: ${result.data.examId}`,
+            duration: 5000,
+          });
+
+          // Call custom onSubmit if provided
+          if (onSubmit) {
+            try {
+              await onSubmit(result.data);
+            } catch (error) {
+              console.error("Custom onSubmit handler error:", error);
+            }
+          }
+
+          // Reset form if adding another
+          if (addAnother) {
+            resetForm();
+            setShowQuestionSearch(false);
+          } else {
+            router.replace("/cp/admin-dashboard/exams/");
+          }
+        } else {
+          // Show detailed error message
+          toast.error(result.message, {
+            description: result.errors
+              ? Object.entries(result.errors)
+                  .map(([field, msg]) => `${field}: ${msg}`)
+                  .join(", ")
+              : undefined,
+            duration: 5000,
+          });
+
+          // Set field-specific errors
+          if (result.errors) {
+            setErrors(result.errors);
+            console.error("Form validation errors:", result.errors);
+          }
+        }
+      } catch (error) {
+        console.error("Error saving exam:", error);
+        toast.error("An unexpected error occurred. Please try again.");
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [
+      validateForm,
+      isEditing,
+      generateToken,
+      recaptchaError,
+      formData,
+      selectedQuestions,
+      examId,
+      onSubmit,
+      router,
+      resetForm,
+    ]
+  );
+
+  const toggleQuestionSearch = useCallback(() => {
+    setShowQuestionSearch((prev) => !prev);
+  }, []);
+
+  // Update dates when initialData changes
+  useEffect(() => {
+    if (initialData.start_date) {
+      setStartDate(new Date(initialData.start_date));
+    }
+    if (initialData.end_date) {
+      setEndDate(new Date(initialData.end_date));
+    }
+  }, [initialData.start_date, initialData.end_date]);
+
+  // Fetch questions when filters change
+  useEffect(() => {
+    if (showQuestionSearch) {
+      fetchQuestions();
+    }
+  }, [questionFilters, showQuestionSearch, fetchQuestions]);
 
   return (
     <div>
@@ -696,7 +809,7 @@ export default function CreateExamForm({
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setShowQuestionSearch(!showQuestionSearch)}
+                onClick={toggleQuestionSearch}
                 disabled={isLoading}
                 className="w-full md:w-fit"
               >
@@ -708,7 +821,7 @@ export default function CreateExamForm({
 
               {showQuestionSearch && (
                 <div className="border rounded-lg p-4 space-y-4 bg-gray-50">
-                  <div className="grid md:grid-cols-3 gap-4">
+                  <div className="grid md:grid-cols-4 gap-4">
                     <div className="grid gap-2">
                       <Label htmlFor="filter_exam_type" className="text-sm">
                         Filter by Exam Type
@@ -813,67 +926,104 @@ export default function CreateExamForm({
                         )}
                       </div>
                     </div>
+
+                    <div className="grid gap-2">
+                      <Label htmlFor="filter_difficulty" className="text-sm">
+                        Filter by Difficulty
+                      </Label>
+                      <div className="flex gap-2">
+                        <Select
+                          value={questionFilters.difficulty_level}
+                          onValueChange={(value) =>
+                            handleFilterChange("difficulty_level", value)
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="All levels" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="easy">Easy</SelectItem>
+                            <SelectItem value="medium">Medium</SelectItem>
+                            <SelectItem value="hard">Hard</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {questionFilters.difficulty_level && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() =>
+                              handleFilterChange("difficulty_level", "")
+                            }
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="space-y-2 max-h-96 overflow-y-auto">
-                    {filteredQuestions.length === 0 ? (
-                      <p className="text-sm text-gray-500 text-center py-4">
-                        No questions found matching the filters
-                      </p>
-                    ) : (
-                      filteredQuestions.map((question) => {
-                        const isSelected = selectedQuestions.some(
-                          (q) => q.question_id === question.question_id
-                        );
-                        return (
-                          <div
-                            key={question.question_id}
-                            className={`border rounded-lg p-4 cursor-pointer transition-colors ${
-                              isSelected
-                                ? "bg-primary/10 border-primary"
-                                : "bg-white hover:bg-gray-50"
-                            }`}
-                            onClick={() => toggleQuestionSelection(question)}
-                          >
-                            <div className="flex items-start justify-between gap-4">
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2 mb-2">
-                                  <span className="text-xs font-medium px-2 py-1 rounded bg-gray-200">
-                                    {question.exam_type}
-                                  </span>
-                                  <span className="text-xs font-medium px-2 py-1 rounded bg-gray-200">
-                                    {question.year}
-                                  </span>
-                                  <span className="text-xs font-medium px-2 py-1 rounded bg-gray-200">
-                                    {question.subject}
-                                  </span>
-                                  <span className="text-xs font-medium px-2 py-1 rounded bg-blue-100 text-blue-700">
-                                    {question.question_point} pts
-                                  </span>
-                                </div>
-                                <p className="text-sm font-medium mb-1">
-                                  {question.question_text}
-                                </p>
-                                <p className="text-xs text-gray-600">
-                                  Type: {question.question_type} | Difficulty:{" "}
-                                  {question.difficulty_level}
-                                </p>
-                              </div>
-                              <div className="flex-shrink-0">
-                                {isSelected ? (
-                                  <div className="h-6 w-6 rounded-full bg-primary text-white flex items-center justify-center text-xs">
-                                    ✓
+                  {isLoadingQuestions ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                      {availableQuestions.length === 0 ? (
+                        <p className="text-sm text-gray-500 text-center py-4">
+                          No questions found matching the filters
+                        </p>
+                      ) : (
+                        availableQuestions.map((question) => {
+                          const isSelected = selectedQuestions.some(
+                            (q) => q.id === question.id
+                          );
+                          return (
+                            <div
+                              key={question.id}
+                              className={`border rounded-lg p-4 cursor-pointer transition-colors ${
+                                isSelected
+                                  ? "bg-primary/10 border-primary"
+                                  : "bg-white hover:bg-gray-50"
+                              }`}
+                              onClick={() => toggleQuestionSelection(question)}
+                            >
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <span className="text-xs font-medium px-2 py-1 rounded bg-gray-200">
+                                      {question.examType}
+                                    </span>
+                                    <span className="text-xs font-medium px-2 py-1 rounded bg-gray-200">
+                                      {question.year}
+                                    </span>
+                                    <span className="text-xs font-medium px-2 py-1 rounded bg-gray-200">
+                                      {question.subject}
+                                    </span>
+                                    <span className="text-xs font-medium px-2 py-1 rounded bg-blue-100 text-primary">
+                                      {question.questionPoint} pts
+                                    </span>
                                   </div>
-                                ) : (
-                                  <div className="h-6 w-6 rounded-full border-2 border-gray-300"></div>
-                                )}
+                                  <p className="text-sm font-medium mb-1">
+                                    {question.questionText}
+                                  </p>
+                                </div>
+                                <div className="flex-shrink-0">
+                                  {isSelected ? (
+                                    <div className="h-6 w-6 rounded-full bg-primary text-white flex items-center justify-center text-xs">
+                                      ✓
+                                    </div>
+                                  ) : (
+                                    <div className="h-6 w-6 rounded-full border-2 border-gray-300"></div>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -887,16 +1037,14 @@ export default function CreateExamForm({
                   </h5>
                   <div className="text-sm text-gray-600">
                     Total Points:{" "}
-                    <span className="font-medium">
-                      {calculateTotalPoints()}
-                    </span>
+                    <span className="font-medium">{totalPoints}</span>
                   </div>
                 </div>
 
                 <div className="space-y-2">
                   {selectedQuestions.map((question, index) => (
                     <div
-                      key={question.question_id}
+                      key={question.id}
                       className="border rounded-lg p-4 bg-white"
                     >
                       <div className="flex items-start justify-between gap-4">
@@ -907,17 +1055,17 @@ export default function CreateExamForm({
                           <div className="flex-1">
                             <div className="flex items-center gap-2 mb-2">
                               <span className="text-xs font-medium px-2 py-1 rounded bg-gray-200">
-                                {question.exam_type}
+                                {question.examType}
                               </span>
                               <span className="text-xs font-medium px-2 py-1 rounded bg-gray-200">
                                 {question.subject}
                               </span>
-                              <span className="text-xs font-medium px-2 py-1 rounded bg-blue-100 text-blue-700">
-                                {question.question_point} pts
+                              <span className="text-xs font-medium px-2 py-1 rounded bg-blue-100 text-primary">
+                                {question.questionPoint} pts
                               </span>
                             </div>
                             <p className="text-sm font-medium">
-                              {question.question_text}
+                              {question.questionText}
                             </p>
                           </div>
                         </div>
@@ -925,7 +1073,7 @@ export default function CreateExamForm({
                           type="button"
                           variant="ghost"
                           size="sm"
-                          onClick={() => removeQuestion(question.question_id)}
+                          onClick={() => removeQuestion(question.id)}
                           disabled={isLoading}
                         >
                           <X className="h-4 w-4 text-red-500" />
@@ -937,16 +1085,42 @@ export default function CreateExamForm({
               </div>
             )}
           </div>
+          <div className="flex items-center justify-between gap-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => router.back()}
+              disabled={isLoading}
+            >
+              Cancel
+            </Button>
 
-          {/* Submit Button */}
-          <Button
-            onClick={handleSubmit}
-            className="w-full md:w-fit"
-            disabled={isLoading}
-          >
-            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {isLoading ? "Saving Exam" : "Save Exam"}
-          </Button>
+            {/* Submit Buttons */}
+            <div className="flex flex-col md:flex-row gap-3">
+              <Button
+                variant="secondary"
+                onClick={() => handleSubmit(false)}
+                className="w-full md:w-fit"
+                disabled={isLoading || isRecaptchaLoading}
+              >
+                {(isLoading || isRecaptchaLoading) && (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                )}
+                {isLoading || isRecaptchaLoading ? "Saving" : "Save and Exit"}
+              </Button>
+
+              <Button
+                onClick={() => handleSubmit(true)}
+                className="w-full md:w-fit"
+                disabled={isLoading || isRecaptchaLoading}
+              >
+                {(isLoading || isRecaptchaLoading) && (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                )}
+                Save and Add Another
+              </Button>
+            </div>
+          </div>
         </div>
       </Card>
     </div>

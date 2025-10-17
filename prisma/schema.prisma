@@ -166,6 +166,7 @@ model Question {
 
   // Relations
   options QuestionOption[]
+  exams   ExamQuestion[] // ✅ NEW: Relation to exams
 
   // Indexes for performance
   @@index([examType, year, subject])
@@ -193,6 +194,64 @@ model QuestionOption {
   // Indexes
   @@index([questionId])
   @@map("question_options")
+}
+
+// ============================================
+// EXAM MODELS - ✅ NEW
+// ============================================
+
+model Exam {
+  id               String    @id @default(cuid())
+  examType         String    @map("exam_type") // WAEC, JAMB, NECO, etc.
+  subject          String
+  year             Int
+  title            String
+  description      String?   @db.Text
+  duration         Int // In minutes
+  passingScore     Float?    @map("passing_score")
+  maxAttempts      Int?      @map("max_attempts")
+  shuffleQuestions Boolean   @default(false) @map("shuffle_questions")
+  randomizeOptions Boolean   @default(false) @map("randomize_options")
+  isPublic         Boolean   @default(false) @map("is_public")
+  isFree           Boolean   @default(true) @map("is_free")
+  status           String    @default("draft") // draft, published, archived
+  category         String? // mock, practice, official
+  startDate        DateTime? @map("start_date")
+  endDate          DateTime? @map("end_date")
+
+  // Audit fields
+  createdBy String    @map("created_by") // Admin user ID
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at") // Soft delete
+
+  // Relations
+  questions ExamQuestion[]
+
+  // Indexes for performance
+  @@index([examType, year, subject])
+  @@index([status])
+  @@index([createdBy])
+  @@index([deletedAt])
+  @@map("exams")
+}
+
+// Junction table for exam questions (many-to-many with order)
+model ExamQuestion {
+  id         String @id @default(cuid())
+  examId     String @map("exam_id")
+  questionId String @map("question_id")
+  orderIndex Int    @map("order_index") // Question order in exam
+
+  // Relations
+  exam     Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  // Indexes
+  @@unique([examId, questionId]) // Prevent duplicate questions in same exam
+  @@index([examId, orderIndex])
+  @@index([questionId])
+  @@map("exam_questions")
 }
 
 enum Gender {

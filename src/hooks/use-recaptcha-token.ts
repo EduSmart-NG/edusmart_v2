@@ -9,7 +9,9 @@ export type ReCaptchaAction =
   | "signin"
   | "forgot_password"
   | "reset_password"
-  | "resend_verification";
+  | "resend_verification"
+  | "exam_create"
+  | "exam_update";
 
 /**
  * Hook return type
