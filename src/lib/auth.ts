@@ -12,6 +12,7 @@ import { redis } from "@/lib/redis";
 import { questionUploadPlugin } from "@/lib/plugins/question-upload/server";
 import { ac, roles } from "@/lib/rbac/permissions";
 import { examUploadPlugin } from "./plugins/exam-upload/server";
+import { questionBulkPlugin } from "./plugins/bulk-question/server";
 
 export const auth = betterAuth({
   database: prismaAdapter(prisma, {
@@ -94,6 +95,10 @@ export const auth = betterAuth({
         window: 3600, // 1 hour in seconds
         max: 50, // 50 uploads per hour
       },
+    }),
+    questionBulkPlugin({
+      apiKey: process.env.QUESTION_BULK_API_KEY!,
+      enableRateLimit: true,
     }),
     examUploadPlugin({
       apiKey: process.env.EXAM_API_KEY!,

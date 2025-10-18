@@ -34,7 +34,7 @@ export const statement = {
   ...defaultStatements,
 
   // Custom resource: Question management
-  question: ["upload", "view", "edit", "delete"] as const,
+  question: ["upload", "view", "edit", "delete", "import", "export"] as const,
 
   // Custom resource: Exam operations
   exam: ["take", "view-results", "create", "manage"] as const,
@@ -77,7 +77,7 @@ export const admin = ac.newRole({
   session: ["list", "revoke", "delete"],
 
   // Custom permissions
-  question: ["upload", "view", "edit", "delete"],
+  question: ["upload", "view", "edit", "delete", "import", "export"],
   exam: ["take", "view-results", "create", "manage"],
   profile: ["view", "update", "delete"],
 });
@@ -94,7 +94,7 @@ export const examManager = ac.newRole({
   session: [],
 
   // Can upload questions (special permission)
-  question: ["upload", "view"],
+  question: ["upload", "view", "import", "export"],
 
   // Regular user exam permissions
   exam: ["take", "view-results"],
