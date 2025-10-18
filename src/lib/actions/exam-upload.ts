@@ -7,7 +7,7 @@
  * Security Features:
  * - Session validation via Better Auth
  * - Admin-only access control
- * - Rate limiting (10 creates/5 minutes per admin)
+ * - Rate limiting (10 creates/5 minutes per admin, 100 list/minute)
  * - Input sanitization (Zod + DOMPurify)
  * - reCAPTCHA validation
  * - SQL injection prevention (Prisma parameterized queries)
@@ -29,11 +29,16 @@ import { decryptQuestion } from "@/lib/utils/question-decrypt";
 import type {
   ExamUploadResponse,
   ExamDeleteResponse,
-  ExamListResponse,
   QuestionSearchResponse,
   QuestionDecrypted,
-  ExamWithStats,
 } from "@/types/exam-api";
+import type {
+  AdminActionResult,
+  ExamListQuery,
+  ExamListResponse,
+  AdminExam,
+  ExamStats,
+} from "@/types/admin";
 import { ZodError } from "zod";
 import { checkRateLimit } from "@/lib/middleware/rate-limit";
 
@@ -696,18 +701,21 @@ export async function searchQuestions(
 }
 
 // ============================================
-// LIST EXAMS
+// LIST EXAMS (ENHANCED FOR ADMIN LISTING PAGE)
 // ============================================
 
 /**
- * List all exams with optional filters
+ * List exams with filtering, searching, and pagination
  *
- * @param filters - Optional filters
- * @returns List of exams with stats
+ * ✅ SECURED: RBAC + Rate limiting (100 requests per minute)
+ * ✅ Audit: Logs admin viewing exam list
+ *
+ * @param query - Optional filtering and pagination parameters
+ * @returns Exam list with metadata
  */
 export async function listExams(
-  filters?: Record<string, unknown>
-): Promise<ExamListResponse> {
+  query?: ExamListQuery & { search?: string }
+): Promise<AdminActionResult<ExamListResponse>> {
   try {
     // STEP 1: Verify admin access
     const adminContext = await verifyAdminAccess();
@@ -719,51 +727,273 @@ export async function listExams(
       };
     }
 
-    // STEP 2: Build where clause
-    const where: Record<string, unknown> = { deletedAt: null };
-    if (filters?.status) where.status = filters.status;
-    if (filters?.exam_type) where.examType = filters.exam_type;
+    const headersList = await headers();
+    const session = await auth.api.getSession({
+      headers: headersList,
+    });
 
-    // STEP 3: Query exams
-    const exams = await prisma.exam.findMany({
-      where,
-      include: {
-        questions: {
-          include: {
-            question: {
-              select: {
-                questionPoint: true,
+    // STEP 2: Check rate limit (100 requests per minute)
+    const rateLimitResult = await checkRateLimit(
+      "admin:list-exams",
+      {
+        max: 100,
+        windowSeconds: 60,
+      },
+      session!.user.id
+    );
+
+    if (!rateLimitResult.allowed) {
+      return {
+        success: false,
+        message: `Rate limit exceeded. Retry in ${rateLimitResult.retryAfter}s`,
+        code: "RATE_LIMIT_EXCEEDED",
+      };
+    }
+
+    // STEP 3: Build WHERE clause with filters and search
+    interface WhereClause {
+      deletedAt: null;
+      status?: string;
+      examType?: string;
+      subject?: string;
+      year?: number;
+      OR?: Array<{
+        title?: { contains: string };
+        subject?: { contains: string };
+        examType?: { contains: string };
+        year?: number;
+      }>;
+    }
+
+    const where: WhereClause = {
+      deletedAt: null, // CRITICAL: Only show non-deleted exams
+    };
+
+    // Apply filters from query
+    if (query?.status) {
+      where.status = query.status;
+    }
+    if (query?.exam_type) {
+      where.examType = query.exam_type;
+    }
+    if (query?.subject) {
+      where.subject = query.subject;
+    }
+    if (query?.year) {
+      where.year = query.year;
+    }
+
+    // Apply search (searches across title, subject, examType, year)
+    // Note: Using contains without mode for database compatibility (SQLite, MySQL < 5.7)
+    if (query?.search && query.search.trim()) {
+      const searchTerm = query.search.trim();
+      where.OR = [
+        {
+          title: {
+            contains: searchTerm,
+          },
+        },
+        {
+          subject: {
+            contains: searchTerm,
+          },
+        },
+        {
+          examType: {
+            contains: searchTerm,
+          },
+        },
+        // Search by year if it's a number
+        ...(isNaN(Number(searchTerm))
+          ? []
+          : [
+              {
+                year: Number(searchTerm),
+              },
+            ]),
+      ];
+    }
+
+    // STEP 4: Build ORDER BY clause
+    const sortBy = query?.sortBy || "createdAt";
+    const sortOrder = query?.sortOrder || "desc";
+    const orderBy: Record<string, string> = {};
+    orderBy[sortBy] = sortOrder;
+
+    // STEP 5: Calculate pagination
+    const limit = query?.limit || 20; // Default 20 exams per page
+    const offset = query?.offset || 0;
+
+    // STEP 6: Query exams with stats
+    const [exams, total] = await Promise.all([
+      prisma.exam.findMany({
+        where,
+        include: {
+          questions: {
+            include: {
+              question: {
+                select: {
+                  questionPoint: true,
+                },
               },
             },
           },
         },
-      },
-      orderBy: { createdAt: "desc" },
+        orderBy,
+        take: limit,
+        skip: offset,
+      }),
+      // Get total count for pagination
+      prisma.exam.count({ where }),
+    ]);
+
+    // STEP 7: Add computed fields and stats
+    const examsWithStats: AdminExam[] = await Promise.all(
+      exams.map(async (exam) => {
+        // Get creator name
+        const creator = await prisma.user.findUnique({
+          where: { id: exam.createdBy },
+          select: { name: true },
+        });
+
+        // Calculate stats
+        const questionCount = exam.questions.length;
+        const totalPoints = exam.questions.reduce(
+          (sum, q) => sum + q.question.questionPoint,
+          0
+        );
+
+        // Check if exam is currently active
+        const now = new Date();
+        const isActive =
+          exam.status === "published" &&
+          (!exam.endDate || exam.endDate > now) &&
+          (!exam.startDate || exam.startDate <= now);
+
+        return {
+          ...exam,
+          questionCount,
+          totalPoints,
+          creatorName: creator?.name || "Unknown",
+          isActive,
+        };
+      })
+    );
+
+    // STEP 8: Audit log
+    await logAuditEntry(adminContext, "LIST_EXAMS", {
+      totalExams: total,
+      filters: query || {},
+      limit,
+      offset,
     });
 
-    // STEP 4: Add stats
-    const examsWithStats: ExamWithStats[] = exams.map((exam) => ({
-      ...exam,
-      questionCount: exam.questions.length,
-      totalPoints: exam.questions.reduce(
-        (sum, q) => sum + q.question.questionPoint,
-        0
-      ),
-    }));
-
+    // STEP 9: Return response
     return {
       success: true,
+      message: "Exams retrieved successfully",
       data: {
         exams: examsWithStats,
-        total: examsWithStats.length,
-        hasMore: false,
+        total,
+        limit,
+        offset,
       },
     };
   } catch (error) {
     console.error("List exams error:", error);
+
     return {
       success: false,
-      message: "An unexpected error occurred",
+      message: "Failed to list exams",
+      error: error instanceof Error ? error.message : "Unknown error",
+      code: "INTERNAL_ERROR",
+    };
+  }
+}
+
+// ============================================
+// GET EXAM STATISTICS (NEW)
+// ============================================
+
+/**
+ * Get exam statistics for admin dashboard
+ *
+ * ✅ SECURED: Admin-only access
+ *
+ * @returns Exam statistics
+ */
+export async function getExamStats(): Promise<AdminActionResult<ExamStats>> {
+  try {
+    // Verify admin access
+    const adminContext = await verifyAdminAccess();
+    if (!adminContext) {
+      return {
+        success: false,
+        message: "Admin access required",
+        code: "FORBIDDEN",
+      };
+    }
+
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    // Query all stats in parallel
+    const [
+      totalExams,
+      publishedExams,
+      draftExams,
+      archivedExams,
+      totalQuestions,
+      examsCreatedToday,
+      examsCreatedThisWeek,
+      examsCreatedThisMonth,
+    ] = await Promise.all([
+      prisma.exam.count({ where: { deletedAt: null } }),
+      prisma.exam.count({
+        where: { deletedAt: null, status: "published" },
+      }),
+      prisma.exam.count({ where: { deletedAt: null, status: "draft" } }),
+      prisma.exam.count({ where: { deletedAt: null, status: "archived" } }),
+      prisma.examQuestion.count({
+        where: { exam: { deletedAt: null } },
+      }),
+      prisma.exam.count({
+        where: { deletedAt: null, createdAt: { gte: today } },
+      }),
+      prisma.exam.count({
+        where: { deletedAt: null, createdAt: { gte: weekAgo } },
+      }),
+      prisma.exam.count({
+        where: { deletedAt: null, createdAt: { gte: monthAgo } },
+      }),
+    ]);
+
+    const avgQuestionsPerExam =
+      totalExams > 0 ? totalQuestions / totalExams : 0;
+
+    return {
+      success: true,
+      message: "Statistics retrieved successfully",
+      data: {
+        totalExams,
+        publishedExams,
+        draftExams,
+        archivedExams,
+        totalQuestions,
+        avgQuestionsPerExam: Math.round(avgQuestionsPerExam * 10) / 10,
+        examsCreatedToday,
+        examsCreatedThisWeek,
+        examsCreatedThisMonth,
+      },
+    };
+  } catch (error) {
+    console.error("Get exam stats error:", error);
+    return {
+      success: false,
+      message: "Failed to retrieve statistics",
+      error: error instanceof Error ? error.message : "Unknown error",
       code: "INTERNAL_ERROR",
     };
   }

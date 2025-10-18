@@ -34,10 +34,17 @@ import {
   deleteFiles,
   validateImageFile,
 } from "@/lib/utils/file-upload";
-import type { QuestionUploadResponse } from "@/types/question-api";
+import type {
+  QuestionDecrypted,
+  QuestionListQuery,
+  QuestionListResponse,
+  QuestionUploadResponse,
+} from "@/types/question-api";
 import { ZodError } from "zod";
 // ✅ NEW: Import RBAC utilities
 import { hasPermission } from "@/lib/rbac/utils";
+import { Prisma } from "@/generated/prisma";
+import { decryptQuestion } from "../utils/question-decrypt";
 
 // ============================================
 // CONSTANTS
@@ -50,6 +57,15 @@ import { hasPermission } from "@/lib/rbac/utils";
 const RATE_LIMIT = {
   MAX_UPLOADS: 50,
   WINDOW_SECONDS: 3600, // 1 hour
+} as const;
+
+/**
+ * Rate limiting configuration for list operations
+ * 100 requests per minute per user
+ */
+const LIST_RATE_LIMIT = {
+  MAX_REQUESTS: 100,
+  WINDOW_SECONDS: 60, // 1 minute
 } as const;
 
 // ============================================
@@ -308,6 +324,116 @@ async function checkRateLimit(userId: string): Promise<RateLimitResult> {
   } catch (error) {
     console.error("Rate limit check failed:", error);
     // Fail open - allow upload if rate limiting fails
+    return { allowed: true };
+  }
+}
+
+/**
+ * Check rate limit for list operations
+ *
+ * Uses Redis/MySQL to track list requests per user.
+ * Limit: 100 requests per minute (60 seconds).
+ *
+ * @param userId - User ID to check
+ * @returns Rate limit result
+ */
+async function checkListRateLimit(userId: string): Promise<RateLimitResult> {
+  try {
+    const key = `question_list:${userId}`;
+    const now = new Date();
+    const data = await redis.get(key);
+
+    let rateLimitData: RateLimitData;
+
+    if (!data) {
+      // First request - create new record
+      const windowExpires = new Date(
+        now.getTime() + LIST_RATE_LIMIT.WINDOW_SECONDS * 1000
+      );
+
+      rateLimitData = {
+        uploads: 1, // Using same field name for consistency
+        firstUpload: now.toISOString(),
+        windowExpires: windowExpires.toISOString(),
+      };
+
+      // Store with TTL
+      await redis.set(
+        key,
+        JSON.stringify(rateLimitData),
+        LIST_RATE_LIMIT.WINDOW_SECONDS
+      );
+
+      return {
+        allowed: true,
+        remaining: LIST_RATE_LIMIT.MAX_REQUESTS - 1,
+      };
+    }
+
+    // Parse existing data
+    rateLimitData = JSON.parse(data);
+    const windowExpires = new Date(rateLimitData.windowExpires);
+
+    // Check if window has expired
+    if (now > windowExpires) {
+      // Window expired - reset counter
+      const newWindowExpires = new Date(
+        now.getTime() + LIST_RATE_LIMIT.WINDOW_SECONDS * 1000
+      );
+
+      rateLimitData = {
+        uploads: 1,
+        firstUpload: now.toISOString(),
+        windowExpires: newWindowExpires.toISOString(),
+      };
+
+      await redis.set(
+        key,
+        JSON.stringify(rateLimitData),
+        LIST_RATE_LIMIT.WINDOW_SECONDS
+      );
+
+      return {
+        allowed: true,
+        remaining: LIST_RATE_LIMIT.MAX_REQUESTS - 1,
+      };
+    }
+
+    // Window is active - check if limit exceeded
+    if (rateLimitData.uploads >= LIST_RATE_LIMIT.MAX_REQUESTS) {
+      const retryAfter = Math.ceil(
+        (windowExpires.getTime() - now.getTime()) / 1000
+      );
+
+      return {
+        allowed: false,
+        retryAfter:
+          retryAfter > 0 ? retryAfter : LIST_RATE_LIMIT.WINDOW_SECONDS,
+      };
+    }
+
+    // Increment counter
+    rateLimitData.uploads += 1;
+
+    // Calculate remaining TTL
+    const remainingTTL = Math.ceil(
+      (windowExpires.getTime() - now.getTime()) / 1000
+    );
+
+    // Update data with remaining TTL
+    await redis.set(
+      key,
+      JSON.stringify(rateLimitData),
+      remainingTTL > 0 ? remainingTTL : LIST_RATE_LIMIT.WINDOW_SECONDS
+    );
+
+    return {
+      allowed: true,
+      remaining: LIST_RATE_LIMIT.MAX_REQUESTS - rateLimitData.uploads,
+    };
+  } catch (error) {
+    console.error("List rate limit check failed:", error);
+    // Fail open - allow request if rate limiting fails
     return { allowed: true };
   }
 }
@@ -894,6 +1020,199 @@ export async function uploadQuestion(
     return {
       success: false,
       message: "An unexpected error occurred. Please try again.",
+      code: "INTERNAL_ERROR",
+    };
+  }
+}
+
+export async function listQuestions(
+  query?: QuestionListQuery & { search?: string }
+): Promise<QuestionListResponse> {
+  try {
+    // STEP 1: Verify authentication and permission
+    const headersList = await headers();
+    const session = await auth.api.getSession({
+      headers: headersList,
+    });
+
+    if (!session) {
+      return {
+        success: false,
+        message: "Authentication required",
+        code: "UNAUTHORIZED",
+      };
+    }
+
+    // Check permission (admin or exam_manager can list questions)
+    const canView = await hasPermission({ question: ["view"] });
+
+    if (!canView) {
+      return {
+        success: false,
+        message: "You don't have permission to view questions",
+        code: "FORBIDDEN",
+      };
+    }
+
+    // STEP 2: Check rate limit (100 requests per minute)
+    const rateLimitResult = await checkListRateLimit(session.user.id);
+
+    if (!rateLimitResult.allowed) {
+      return {
+        success: false,
+        message: `Rate limit exceeded. Please try again in ${rateLimitResult.retryAfter} seconds.`,
+        code: "RATE_LIMIT_EXCEEDED",
+      };
+    }
+
+    // STEP 3: Build WHERE clause with filters
+    const where: Prisma.QuestionWhereInput = {
+      deletedAt: null, // Only show non-deleted questions
+    };
+
+    // Apply filters
+    if (query?.exam_type) {
+      where.examType = query.exam_type;
+    }
+    if (query?.subject) {
+      where.subject = query.subject;
+    }
+    if (query?.year) {
+      where.year = query.year;
+    }
+    if (query?.difficulty_level) {
+      where.difficultyLevel = query.difficulty_level;
+    }
+    if (query?.question_type) {
+      where.questionType = query.question_type;
+    }
+
+    // Apply search (Note: searching encrypted data is limited to metadata)
+    // We cannot search inside encrypted questionText efficiently
+    // Instead, we search across metadata fields
+    if (query?.search && query.search.trim()) {
+      const searchTerm = query.search.trim();
+      where.OR = [
+        {
+          examType: {
+            contains: searchTerm,
+          },
+        },
+        {
+          subject: {
+            contains: searchTerm,
+          },
+        },
+        {
+          difficultyLevel: {
+            contains: searchTerm,
+          },
+        },
+        // Search by year if it's a number
+        ...(isNaN(Number(searchTerm))
+          ? []
+          : [
+              {
+                year: Number(searchTerm),
+              },
+            ]),
+      ];
+    }
+
+    // STEP 4: Build ORDER BY clause
+    const sortBy = query?.sortBy || "createdAt";
+    const sortOrder = (query?.sortOrder || "desc") as Prisma.SortOrder;
+    const orderBy: Prisma.QuestionOrderByWithRelationInput = {
+      [sortBy]: sortOrder,
+    };
+
+    // STEP 5: Calculate pagination
+    const limit = query?.limit || 20;
+    const offset = query?.offset || 0;
+
+    // STEP 6: Query questions with options
+    const [questions, total] = await Promise.all([
+      prisma.question.findMany({
+        where,
+        include: {
+          options: {
+            orderBy: { orderIndex: "asc" },
+          },
+        },
+        orderBy,
+        take: limit,
+        skip: offset,
+      }),
+      prisma.question.count({ where }),
+    ]);
+
+    // STEP 7: Decrypt questions
+    const decryptedQuestions: QuestionDecrypted[] = questions
+      .map((q) => {
+        try {
+          const decrypted = decryptQuestion(q);
+          return {
+            id: decrypted.id,
+            examType: decrypted.examType,
+            year: decrypted.year,
+            subject: decrypted.subject,
+            questionType: decrypted.questionType,
+            questionText: decrypted.questionText,
+            questionImage: decrypted.questionImage,
+            questionPoint: decrypted.questionPoint,
+            answerExplanation: decrypted.answerExplanation,
+            difficultyLevel: decrypted.difficultyLevel,
+            tags: Array.isArray(decrypted.tags)
+              ? decrypted.tags
+              : JSON.parse(decrypted.tags as string),
+            timeLimit: decrypted.timeLimit,
+            language: decrypted.language,
+            createdBy: decrypted.createdBy,
+            createdAt: decrypted.createdAt,
+            updatedAt: decrypted.updatedAt,
+            deletedAt: decrypted.deletedAt,
+            options: decrypted.options.map((opt) => ({
+              id: opt.id,
+              questionId: opt.questionId,
+              optionText: opt.optionText,
+              optionImage: opt.optionImage,
+              isCorrect: opt.isCorrect,
+              orderIndex: opt.orderIndex,
+            })),
+          };
+        } catch (error) {
+          console.error(`Failed to decrypt question ${q.id}:`, error);
+          return null;
+        }
+      })
+      .filter((q): q is QuestionDecrypted => q !== null);
+
+    // STEP 8: Audit log
+    console.log(
+      `[AUDIT] User ${session.user.email} listed questions:`,
+      JSON.stringify({
+        total,
+        filters: query || {},
+        limit,
+        offset,
+      })
+    );
+
+    // STEP 9: Return response
+    return {
+      success: true,
+      data: {
+        questions: decryptedQuestions,
+        total,
+        hasMore: offset + limit < total,
+      },
+    };
+  } catch (error) {
+    console.error("List questions error:", error);
+
+    return {
+      success: false,
+      message: "Failed to list questions",
       code: "INTERNAL_ERROR",
     };
   }

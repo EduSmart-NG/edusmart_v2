@@ -1,5 +1,5 @@
 /**
- * Admin Users Listing Page - Server Component with URL-based filtering
+ * Admin Exams Listing Page - Server Component with URL-based filtering
  *
  * ARCHITECTURE:
  * - Server Component for SEO and performance
@@ -7,11 +7,24 @@
  * - Server-side filtering, sorting, and pagination
  * - Streaming with Suspense for optimal loading states
  * - Parallel data fetching for stats and table
+ *
+ * MIGRATION NOTES:
+ * - Removed TanStack React Table (unnecessary for server-side operations)
+ * - All state now lives in URL (searchParams)
+ * - Filters are applied server-side via listExams()
+ * - Table data is paginated and only current page is fetched
  */
 
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import { Users, UserCheck, UserX, Shield } from "lucide-react";
+import {
+  FileText,
+  CheckCircle2,
+  FileEdit,
+  HelpCircle,
+  Plus,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -20,19 +33,19 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { UsersTable } from "@/components/admin/users-data-table";
-import { UsersFilters } from "@/components/admin/users-filter";
-import { listUsers } from "@/lib/actions/admin";
-import type { UserListQuery } from "@/types/admin";
-import prisma from "@/lib/prisma";
+import { ExamsTable } from "@/components/admin/exams/exam-data-table";
+import { ExamsFilters } from "@/components/admin/exams/exam-filter";
+import { listExams, getExamStats } from "@/lib/actions/exam-upload";
+import type { ExamListQuery } from "@/types/admin";
+import Link from "next/link";
 
 // ============================================
 // METADATA
 // ============================================
 
 export const metadata: Metadata = {
-  title: "Users Management | Admin Dashboard",
-  description: "Manage users, roles, and permissions",
+  title: "Exams Management | Admin Dashboard",
+  description: "Manage exams, questions, and exam settings",
 };
 
 // ============================================
@@ -43,34 +56,14 @@ interface PageProps {
   searchParams: Promise<{
     page?: string;
     limit?: string;
-    role?: string;
-    banned?: string;
-    gender?: string;
-    state?: string;
-    search?: string;
+    status?: string;
+    exam_type?: string;
+    subject?: string;
+    year?: string;
     sort_by?: string;
     sort_order?: string;
+    search?: string;
   }>;
-}
-
-// ============================================
-// STATS FUNCTIONS
-// ============================================
-
-async function getUserStats() {
-  const [totalUsers, activeUsers, bannedUsers, adminUsers] = await Promise.all([
-    prisma.user.count(),
-    prisma.user.count({ where: { banned: false } }),
-    prisma.user.count({ where: { banned: true } }),
-    prisma.user.count({ where: { role: "admin" } }),
-  ]);
-
-  return {
-    totalUsers,
-    activeUsers,
-    bannedUsers,
-    adminUsers,
-  };
 }
 
 // ============================================
@@ -107,33 +100,49 @@ function StatsCard({
 // ============================================
 
 async function StatsCards() {
-  const stats = await getUserStats();
+  const result = await getExamStats();
+
+  if (!result.success || !result.data) {
+    return (
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">
+              Failed to load statistics
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const stats = result.data;
 
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
       <StatsCard
-        title="Total Users"
-        value={stats.totalUsers}
-        description="All registered users"
-        icon={Users}
+        title="Total Exams"
+        value={stats.totalExams}
+        description="All exams in the system"
+        icon={FileText}
       />
       <StatsCard
-        title="Active Users"
-        value={stats.activeUsers}
-        description="Users in good standing"
-        icon={UserCheck}
+        title="Published Exams"
+        value={stats.publishedExams}
+        description="Currently available to users"
+        icon={CheckCircle2}
       />
       <StatsCard
-        title="Banned Users"
-        value={stats.bannedUsers}
-        description="Currently banned"
-        icon={UserX}
+        title="Draft Exams"
+        value={stats.draftExams}
+        description="Exams in draft status"
+        icon={FileEdit}
       />
       <StatsCard
-        title="Administrators"
-        value={stats.adminUsers}
-        description="Admin role users"
-        icon={Shield}
+        title="Total Questions"
+        value={stats.totalQuestions}
+        description="Questions across all exams"
+        icon={HelpCircle}
       />
     </div>
   );
@@ -188,33 +197,33 @@ function TableSkeleton() {
 }
 
 // ============================================
-// USERS TABLE WRAPPER
+// EXAMS TABLE WRAPPER
 // ============================================
 
-async function UsersTableWrapper({
+async function ExamsTableWrapper({
   searchParams,
 }: {
-  searchParams: UserListQuery & { search?: string };
+  searchParams: ExamListQuery & { search?: string };
 }) {
-  const result = await listUsers(searchParams);
+  const result = await listExams(searchParams);
 
   if (!result.success || !result.data) {
     return (
       <div className="rounded-md border p-8 text-center">
         <p className="text-sm text-muted-foreground">
-          {result.message || "Failed to load users"}
+          {result.message || "Failed to load exams"}
         </p>
       </div>
     );
   }
 
-  const { users, total, limit, offset } = result.data;
+  const { exams, total, limit, offset } = result.data;
   const currentPage = Math.floor((offset || 0) / (limit || 20)) + 1;
   const totalPages = Math.ceil(total / (limit || 20));
 
   return (
-    <UsersTable
-      users={users}
+    <ExamsTable
+      exams={exams}
       total={total}
       currentPage={currentPage}
       totalPages={totalPages}
@@ -227,7 +236,7 @@ async function UsersTableWrapper({
 // MAIN PAGE COMPONENT
 // ============================================
 
-export default async function AdminUsersPage({ searchParams }: PageProps) {
+export default async function AdminExamsPage({ searchParams }: PageProps) {
   // Parse search params
   const params = await searchParams;
   const page = parseInt(params.page || "1");
@@ -235,26 +244,24 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
   const offset = (page - 1) * limit;
 
   // Build query for server action
-  const sortBy = params.sort_by as "name" | "email" | "createdAt" | undefined;
-  const sortDirection = params.sort_order as "asc" | "desc" | undefined;
+  const sortBy = params.sort_by as
+    | "createdAt"
+    | "title"
+    | "year"
+    | "status"
+    | undefined;
+  const sortOrder = params.sort_order as "asc" | "desc" | undefined;
 
-  const query: UserListQuery & { search?: string } = {
+  const query: ExamListQuery & { search?: string } = {
     limit,
     offset,
-    searchValue: params.search,
-    searchField: params.search ? "name" : undefined, // Search in name field
-    searchOperator: "contains",
-    filterField: params.role ? "role" : params.banned ? "banned" : undefined,
-    filterValue:
-      params.role ||
-      (params.banned === "true"
-        ? true
-        : params.banned === "false"
-          ? false
-          : undefined),
-    filterOperator: "eq",
-    sortBy: sortBy,
-    sortDirection: sortDirection,
+    status: params.status,
+    exam_type: params.exam_type,
+    subject: params.subject,
+    year: params.year ? parseInt(params.year) : undefined,
+    sortBy: sortBy || "createdAt",
+    sortOrder: sortOrder || "desc",
+    search: params.search,
   };
 
   return (
@@ -263,9 +270,15 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
       <div className="flex items-center justify-between">
         <div>
           <p className="text-muted-foreground">
-            Manage and organize all users in the system
+            Manage and organize all exams in the system
           </p>
         </div>
+        <Button asChild variant="outline">
+          <Link href="/cp/admin-dashboard/exams/new">
+            <Plus className="mr-2 h-4 w-4" />
+            Create Exam
+          </Link>
+        </Button>
       </div>
 
       {/* Stats cards with parallel loading */}
@@ -276,19 +289,17 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
       {/* Main content card */}
       <Card>
         <CardHeader>
-          <CardTitle>All Users</CardTitle>
-          <CardDescription>
-            Filter, search, and manage users in the database
-          </CardDescription>
+          <CardTitle>All Exams</CardTitle>
+          <CardDescription>Filter, search, and manage exams</CardDescription>
         </CardHeader>
         <CardContent>
           {/* Filters */}
-          <UsersFilters />
+          <ExamsFilters />
 
           {/* Table with streaming */}
           <div className="mt-6">
             <Suspense fallback={<TableSkeleton />}>
-              <UsersTableWrapper searchParams={query} />
+              <ExamsTableWrapper searchParams={query} />
             </Suspense>
           </div>
         </CardContent>
