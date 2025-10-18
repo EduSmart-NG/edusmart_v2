@@ -9,6 +9,7 @@
 
 import type { Question, QuestionOption } from "@/generated/prisma";
 import type { QuestionUploadInput } from "@/lib/validations/question";
+import { BulkFormat } from "./bulk-import";
 
 // ============================================
 // REQUEST TYPES
@@ -296,4 +297,183 @@ export interface DecryptedOption {
   optionImage: string | null;
   isCorrect: boolean;
   orderIndex: number;
+}
+
+// ============================================
+// IMPORT TYPES
+// ============================================
+
+export interface BulkImportRequest {
+  format: BulkFormat;
+  validateOnly?: boolean; // Preview mode - validate without saving
+}
+
+export interface BulkImportProgress {
+  stage: "parsing" | "validating" | "saving" | "complete" | "error";
+  current: number;
+  total: number;
+  percentage: number;
+  message: string;
+}
+
+export interface BulkImportRowError {
+  row: number;
+  field?: string;
+  message: string;
+  value?: unknown;
+}
+
+export interface BulkImportValidationResult {
+  valid: boolean;
+  totalRows: number;
+  validRows: number;
+  invalidRows: number;
+  errors: BulkImportRowError[];
+  preview: QuestionBulkRow[];
+}
+
+export interface BulkImportResponse {
+  success: boolean;
+  message: string;
+  code?: string;
+  data?: {
+    importedCount: number;
+    failedCount: number;
+    totalRows: number;
+    errors?: BulkImportRowError[];
+    questionIds?: string[];
+  };
+}
+
+// ============================================
+// EXPORT TYPES
+// ============================================
+
+export interface BulkExportQuery {
+  format: BulkFormat;
+  examType?: string;
+  subject?: string;
+  year?: number;
+  difficultyLevel?: string;
+  questionType?: string;
+  limit?: number;
+  includeDeleted?: boolean;
+}
+
+export interface BulkExportProgress {
+  stage: "querying" | "decrypting" | "formatting" | "complete" | "error";
+  current: number;
+  total: number;
+  percentage: number;
+  message: string;
+}
+
+export interface BulkExportResponse {
+  success: boolean;
+  message: string;
+  code?: string;
+  data?: {
+    buffer: Buffer;
+    filename: string;
+    mimeType: string;
+    size: number;
+    exportedCount: number;
+  };
+}
+
+// ============================================
+// TEMPLATE TYPES
+// ============================================
+
+export interface TemplateRequest {
+  format: BulkFormat;
+  includeSamples?: boolean;
+}
+
+export interface TemplateResponse {
+  success: boolean;
+  message: string;
+  code?: string;
+  data?: {
+    buffer: Buffer;
+    filename: string;
+    mimeType: string;
+    size: number;
+  };
+}
+
+// ============================================
+// QUESTION ROW MAPPING
+// ============================================
+
+/**
+ * Flattened question row for import/export
+ * Maps to CSV/Excel columns
+ *
+ * Made compatible with Record<string, unknown> for format handlers
+ */
+export interface QuestionBulkRow extends Record<string, unknown> {
+  // Core metadata
+  exam_type: string;
+  year: number;
+  subject: string;
+  question_type: string;
+  difficulty_level: string;
+  language: string;
+
+  // Question content (will be encrypted)
+  question_text: string;
+  question_image?: string | null;
+  question_point: number;
+  answer_explanation?: string | null;
+
+  // Tags (comma-separated string or JSON array)
+  tags?: string;
+  time_limit?: number | null;
+
+  // Options (flattened: option_1_text, option_1_is_correct, etc.)
+  option_1_text: string;
+  option_1_is_correct: boolean;
+  option_1_image?: string | null;
+
+  option_2_text: string;
+  option_2_is_correct: boolean;
+  option_2_image?: string | null;
+
+  option_3_text?: string | null;
+  option_3_is_correct?: boolean;
+  option_3_image?: string | null;
+
+  option_4_text?: string | null;
+  option_4_is_correct?: boolean;
+  option_4_image?: string | null;
+
+  option_5_text?: string | null;
+  option_5_is_correct?: boolean;
+  option_5_image?: string | null;
+}
+
+/**
+ * Complete question with options for export
+ */
+export interface QuestionWithOptions extends Question {
+  options: QuestionOption[];
+}
+
+// ============================================
+// PROCESSOR TYPES
+// ============================================
+
+export interface BulkProcessorOptions {
+  batchSize?: number; // Records per batch (default: 50)
+  onProgress?: (progress: BulkImportProgress | BulkExportProgress) => void;
+  validateOnly?: boolean;
+}
+
+export interface BulkProcessorResult {
+  success: boolean;
+  processedCount: number;
+  failedCount: number;
+  errors: BulkImportRowError[];
+  data?: unknown[];
 }
