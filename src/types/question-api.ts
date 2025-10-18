@@ -230,3 +230,70 @@ export function isUploadError(
 ): response is QuestionUploadError {
   return response.success === false;
 }
+
+export interface QuestionListQuery {
+  exam_type?: string; // WAEC, JAMB, NECO, etc.
+  subject?: string; // Mathematics, English, etc.
+  year?: number; // 2020, 2021, etc.
+  difficulty_level?: string; // easy, medium, hard
+  question_type?: string; // multiple_choice, true_false, essay, fill_in_blank
+  limit?: number; // Pagination limit (default: 20)
+  offset?: number; // Pagination offset (default: 0)
+  sortBy?: "createdAt" | "examType" | "subject" | "year"; // Sort field
+  sortOrder?: "asc" | "desc"; // Sort direction
+  search?: string; // Search across metadata (examType, subject, difficulty)
+}
+
+/**
+ * Question list response
+ * Contains questions with pagination metadata
+ */
+export interface QuestionListResponse {
+  success: boolean;
+  message?: string;
+  code?: string;
+  data?: {
+    questions: QuestionDecrypted[];
+    total: number;
+    limit?: number;
+    offset?: number;
+    hasMore?: boolean;
+  };
+}
+
+/**
+ * Decrypted question with decrypted options
+ * Used for admin viewing and editing
+ */
+export interface QuestionDecrypted {
+  id: string;
+  examType: string;
+  year: number;
+  subject: string;
+  questionType: string;
+  questionText: string; // DECRYPTED
+  questionImage: string | null;
+  questionPoint: number;
+  answerExplanation: string | null; // DECRYPTED
+  difficultyLevel: string;
+  tags: string[]; // Parsed JSON array
+  timeLimit: number | null;
+  language: string;
+  createdBy: string;
+  createdAt: Date;
+  updatedAt: Date;
+  deletedAt: Date | null;
+  options: DecryptedOption[];
+}
+
+/**
+ * Decrypted question option
+ */
+export interface DecryptedOption {
+  id: string;
+  questionId: string;
+  optionText: string; // DECRYPTED
+  optionImage: string | null;
+  isCorrect: boolean;
+  orderIndex: number;
+}

@@ -1,4 +1,5 @@
 import { Gender } from "@/generated/prisma";
+import type { ExamWithStats } from "./exam-api";
 
 /**
  * Admin user with full profile including admin fields
@@ -249,6 +250,7 @@ export interface AuditLog {
  * Admin action types for audit logging
  */
 export type AdminAction =
+  // User actions
   | "CREATE_USER"
   | "UPDATE_USER"
   | "DELETE_USER"
@@ -260,7 +262,16 @@ export type AdminAction =
   | "REVOKE_SESSION"
   | "REVOKE_ALL_SESSIONS"
   | "LIST_USERS"
-  | "VIEW_USER_SESSIONS";
+  | "VIEW_USER_SESSIONS"
+  // Exam actions
+  | "LIST_EXAMS"
+  | "VIEW_EXAM"
+  | "CREATE_EXAM"
+  | "UPDATE_EXAM"
+  | "DELETE_EXAM"
+  | "PUBLISH_EXAM"
+  | "ARCHIVE_EXAM"
+  | "DUPLICATE_EXAM";
 
 /**
  * Admin permission check result
@@ -294,3 +305,102 @@ export interface CreateUserAdminResult {
    */
   tempPassword: string;
 }
+
+/**
+ * Exam list query parameters
+ * Similar to UserListQuery for consistency
+ *
+ * UPDATED: Added optional search parameter
+ */
+export interface ExamListQuery {
+  status?: string; // draft, published, archived
+  exam_type?: string; // WAEC, JAMB, NECO, etc.
+  subject?: string; // Mathematics, English, etc.
+  year?: number; // 2020, 2021, etc.
+  limit?: number; // Pagination limit (default: 20)
+  offset?: number; // Pagination offset (default: 0)
+  sortBy?: "createdAt" | "title" | "year" | "status"; // Sort field
+  sortOrder?: "asc" | "desc"; // Sort direction
+  search?: string; // NEW: Search across title, subject, examType, year
+}
+
+/**
+ * Exam list response
+ * Contains exams with pagination metadata
+ *
+ * No changes needed here
+ */
+export interface ExamListResponse {
+  exams: AdminExam[];
+  total: number;
+  limit?: number;
+  offset?: number;
+}
+
+/**
+ * Admin exam type
+ * Extends ExamWithStats with admin-specific fields
+ *
+ * No changes needed here
+ */
+export interface AdminExam extends ExamWithStats {
+  // All fields from ExamWithStats plus computed fields
+  creatorName?: string; // Name of admin who created the exam
+  isActive: boolean; // Computed: status === 'published' && (!endDate || endDate > now)
+}
+
+/**
+ * Exam statistics for admin dashboard
+ *
+ * No changes needed here
+ */
+export interface ExamStats {
+  totalExams: number;
+  publishedExams: number;
+  draftExams: number;
+  archivedExams: number;
+  totalQuestions: number;
+  avgQuestionsPerExam: number;
+  examsCreatedToday: number;
+  examsCreatedThisWeek: number;
+  examsCreatedThisMonth: number;
+}
+
+/**
+ * Exam-specific audit log details
+ *
+ * No changes needed here
+ */
+export interface ExamAuditDetails extends AuditLogDetails {
+  examId?: string;
+  examTitle?: string;
+  examType?: string;
+  subject?: string;
+  year?: number;
+  questionCount?: number;
+  oldStatus?: string;
+  newStatus?: string;
+}
+
+// ============================================
+// SUMMARY OF CHANGES
+// ============================================
+
+/**
+ * WHAT CHANGED:
+ *
+ * 1. ExamListQuery interface:
+ *    - Added `search?: string` parameter
+ *    - This allows searching across title, subject, examType, and year
+ *
+ * 2. All other types remain unchanged:
+ *    - ExamListResponse
+ *    - AdminExam
+ *    - ExamStats
+ *    - ExamAuditDetails
+ *
+ * BACKWARD COMPATIBILITY:
+ * - The search parameter is optional, so existing code continues to work
+ * - All existing filters (status, exam_type, subject, year) work as before
+ * - Only the server action implementation needs updating
+ */
