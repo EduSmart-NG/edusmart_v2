@@ -1,101 +1,99 @@
 /**
  * JSON Format Handler
  *
- * Handles .json file parsing and generation
+ * FIXED: Template now generates proper data types for numeric and boolean fields
+ *
+ * Handles parsing and generating JSON files for bulk question operations.
  */
 
 import type {
   FormatHandler,
-  ParseOptions,
   ParseResult,
-  ExportOptions,
+  ParseOptions,
   ExportResult,
+  ExportOptions,
   TemplateOptions,
-  ParseError,
 } from "@/types/bulk-import";
 
-export class JsonFormatHandler<T = Record<string, unknown>>
-  implements FormatHandler<T>
-{
+class JsonFormatHandler implements FormatHandler {
   async parse(
     buffer: Buffer,
     options: ParseOptions = {}
-  ): Promise<ParseResult<T>> {
-    const { maxRows, skipEmptyRows = true } = options;
-
-    const errors: ParseError[] = [];
+  ): Promise<ParseResult> {
+    const { skipEmptyRows = true, maxRows } = options;
 
     try {
       const jsonString = buffer.toString("utf-8");
       let parsed = JSON.parse(jsonString);
 
-      // Ensure we have an array
+      // Handle both array and single object
       if (!Array.isArray(parsed)) {
-        if (typeof parsed === "object" && parsed !== null) {
-          // Wrap single object in array
-          parsed = [parsed];
-        } else {
-          throw new Error("JSON must be an array or object");
+        parsed = [parsed];
+      }
+
+      // Filter out schema object if present
+      const data = parsed.filter((item: unknown) => {
+        if (typeof item === "object" && item !== null) {
+          return !("_schema" in item);
         }
-      }
-
-      // Skip empty objects if configured
-      let data = skipEmptyRows
-        ? parsed.filter((row: unknown) => {
-            if (typeof row !== "object" || row === null) return true;
-            return Object.keys(row).length > 0;
-          })
-        : parsed;
-
-      // Apply max rows limit
-      if (maxRows) {
-        data = data.slice(0, maxRows);
-      }
-
-      // Extract headers from first object
-      const headers =
-        data.length > 0 && typeof data[0] === "object" && data[0] !== null
-          ? Object.keys(data[0])
-          : [];
-
-      return {
-        data: data as T[],
-        headers,
-        rowCount: data.length,
-        errors,
-      };
-    } catch (error) {
-      errors.push({
-        row: 0,
-        message: `Failed to parse JSON file: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
+        return true;
       });
 
+      // Apply row limit if specified
+      const limitedData = maxRows ? data.slice(0, maxRows) : data;
+
+      // Skip empty rows if enabled
+      const filteredData = skipEmptyRows
+        ? limitedData.filter((row: unknown) => {
+            if (typeof row !== "object" || row === null) return false;
+            return Object.values(row).some((v) => v !== null && v !== "");
+          })
+        : limitedData;
+
+      // Extract headers from first data row
+      const headers =
+        filteredData.length > 0 ? Object.keys(filteredData[0]) : [];
+
+      return {
+        data: filteredData,
+        headers,
+        rowCount: filteredData.length,
+        errors: [],
+      };
+    } catch (error) {
       return {
         data: [],
         headers: [],
         rowCount: 0,
-        errors,
+        errors: [
+          {
+            row: 0,
+            message: `Failed to parse JSON: ${
+              error instanceof Error ? error.message : "Unknown error"
+            }`,
+          },
+        ],
       };
     }
   }
 
   async export(
-    data: T[],
+    data: Record<string, unknown>[],
     headers: string[],
     options: ExportOptions = {}
   ): Promise<ExportResult> {
-    const { prettyPrint = true } = options;
-
     try {
-      // Ensure data objects only have specified headers
+      const { prettyPrint = true } = options;
+
+      // Filter data to only include specified headers
       const filteredData = data.map((row) => {
-        const filtered: Record<string, unknown> = {};
-        headers.forEach((header) => {
-          filtered[header] = (row as Record<string, unknown>)[header];
+        const filteredRow: Record<string, unknown> = {};
+        headers.forEach((h) => {
+          if (h in row) {
+            filteredRow[h] = row[h];
+          }
         });
-        return filtered;
+        return filteredRow;
       });
 
       const json = prettyPrint
@@ -140,14 +138,76 @@ export class JsonFormatHandler<T = Record<string, unknown>>
       template.push({ _schema: schema });
     }
 
-    // Add sample data objects
+    // ✅ FIXED: Add sample data with proper types
     if (includeSamples) {
-      for (let i = 0; i < sampleCount; i++) {
-        const sample: Record<string, string> = {};
-        headers.forEach((h) => {
-          sample[h] = `Sample ${h} ${i + 1}`;
-        });
-        template.push(sample);
+      // Define realistic sample data instead of generic strings
+      const sampleQuestions = [
+        {
+          exam_type: "UTME",
+          year: 2025,
+          subject: "Mathematics",
+          question_type: "multiple_choice",
+          difficulty_level: "medium",
+          language: "en",
+          question_text: "What is the value of x in the equation 2x + 5 = 15?",
+          question_point: 2,
+          answer_explanation:
+            "Subtract 5 from both sides: 2x = 10, then divide by 2: x = 5.",
+          tags: "algebra, linear equations",
+          time_limit: 60,
+          option_1_text: "3",
+          option_1_is_correct: false,
+          option_2_text: "5",
+          option_2_is_correct: true,
+          option_3_text: "7",
+          option_3_is_correct: false,
+          option_4_text: "10",
+          option_4_is_correct: false,
+        },
+        {
+          exam_type: "WAEC",
+          year: 2025,
+          subject: "English Language",
+          question_type: "true_false",
+          difficulty_level: "easy",
+          language: "en",
+          question_text:
+            "The sentence 'She runs daily' is in the present tense.",
+          question_point: 1,
+          answer_explanation: "The verb 'runs' indicates the present tense.",
+          tags: "grammar, tenses",
+          time_limit: 30,
+          option_1_text: "True",
+          option_1_is_correct: true,
+          option_2_text: "False",
+          option_2_is_correct: false,
+        },
+        {
+          exam_type: "NECO",
+          year: 2025,
+          subject: "Physics",
+          question_type: "multiple_choice",
+          difficulty_level: "hard",
+          language: "en",
+          question_text: "What is the unit of electric field strength?",
+          question_point: 3,
+          answer_explanation:
+            "Electric field strength is force per unit charge, measured in Newtons per Coulomb (N/C).",
+          tags: "electricity, physics",
+          time_limit: 90,
+          option_1_text: "Ampere",
+          option_1_is_correct: false,
+          option_2_text: "Volt",
+          option_2_is_correct: false,
+          option_3_text: "Newton per Coulomb",
+          option_3_is_correct: true,
+          option_4_text: "Watt",
+          option_4_is_correct: false,
+        },
+      ];
+
+      for (let i = 0; i < Math.min(sampleCount, sampleQuestions.length); i++) {
+        template.push(sampleQuestions[i]);
       }
     }
 

@@ -1,14 +1,3 @@
-/**
- * Admin Questions Listing Page - Server Component
- *
- * ARCHITECTURE:
- * - Server Component for SEO and performance
- * - URL search params for state management
- * - Server-side filtering, sorting, and pagination
- * - Streaming with Suspense
- * - Parallel data fetching for stats and table
- */
-
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import {
@@ -273,12 +262,11 @@ export default async function AdminQuestionsPage({ searchParams }: PageProps) {
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Questions</h2>
           <p className="text-muted-foreground">
             Manage and organize question bank
           </p>
         </div>
-        <Button asChild>
+        <Button asChild variant="outline">
           <Link href="/cp/admin-dashboard/questions/new">
             <Plus className="mr-2 h-4 w-4" />
             Add Question

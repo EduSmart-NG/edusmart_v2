@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Questions Table Component - With Truncated Question Text
+ * Questions Table Component - With Fixed Question Text Truncation
  */
 
 import * as React from "react";
@@ -243,7 +243,7 @@ export function QuestionsTable({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Question</TableHead>
+              <TableHead className="w-[300px]">Question</TableHead>
               <TableHead>Exam Type</TableHead>
               <TableHead>Subject</TableHead>
               <TableHead>Year</TableHead>
@@ -258,16 +258,11 @@ export function QuestionsTable({
             {questions.map((question) => {
               return (
                 <TableRow key={question.id}>
-                  <TableCell>
-                    <div className="max-w-[300px]">
-                      <p className="text-sm font-medium">
+                  <TableCell className="w-[300px]">
+                    <div className="max-w-[300px] overflow-hidden">
+                      <p className="text-sm font-medium truncate">
                         {truncateText(question.questionText, 60)}
                       </p>
-                      {question.questionImage && (
-                        <Badge variant="outline" className="mt-1 text-xs">
-                          Has Image
-                        </Badge>
-                      )}
                     </div>
                   </TableCell>
 
