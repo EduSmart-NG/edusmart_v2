@@ -1,26 +1,11 @@
-/**
- * Example Client Component for Question Bulk Operations
- *
- * Shows how to use the bulk import/export server actions with progress tracking
- * and comprehensive error handling for excellent UX.
- *
- * Features:
- * - File upload with drag & drop
- * - Real-time progress tracking
- * - Validation preview before import
- * - Error reporting with row numbers
- * - Download templates
- * - Export with filters
- */
-
 "use client";
 
 import { useState } from "react";
 import {
   bulkImportQuestions,
   bulkExportQuestions,
-  downloadTemplate,
 } from "@/lib/actions/bulk-questions";
+import { downloadTemplate } from "@/lib/actions/bulk-template-download";
 import type { BulkExportQuery } from "@/types/question-api";
 
 interface Progress {
@@ -141,7 +126,7 @@ export default function QuestionBulkManager() {
     setProgress(null);
 
     if (response.success && response.data) {
-      // Create blob and download - FIXED
+      // Create blob and download
       const blob = new Blob([new Uint8Array(response.data.buffer)], {
         type: response.data.mimeType,
       });
@@ -161,14 +146,21 @@ export default function QuestionBulkManager() {
   };
 
   // ============================================
-  // DOWNLOAD TEMPLATE
+  // DOWNLOAD TEMPLATE - FIXED FOR BASE64
   // ============================================
   const handleDownloadTemplate = async () => {
     const response = await downloadTemplate(selectedFormat);
 
     if (response.success && response.data) {
-      // Create blob and download - FIXED
-      const blob = new Blob([new Uint8Array(response.data.buffer)], {
+      // Convert base64 string back to binary
+      const binaryString = atob(response.data.buffer);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+
+      // Create blob and download
+      const blob = new Blob([bytes], {
         type: response.data.mimeType,
       });
       const url = URL.createObjectURL(blob);

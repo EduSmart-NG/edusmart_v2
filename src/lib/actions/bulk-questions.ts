@@ -1,7 +1,11 @@
 /**
  * Question Bulk Import/Export Server Actions
  *
+ * FIXED: Questions now save WITH their answer options
  * UPDATED WITH RBAC PERMISSIONS
+ *
+ * NOTE: Template download moved to separate server action:
+ *       @see lib/actions/download-template.ts
  *
  * Secure server actions for bulk operations with:
  * - Session validation via Better Auth
@@ -9,8 +13,9 @@
  * - Rate limiting per operation type
  * - Progress tracking
  * - Comprehensive error handling
+ * - Type-safe batch operations (NO 'any' types)
  *
- * @module lib/actions/question-bulk
+ * @module lib/actions/bulk-questions
  */
 
 "use server";
@@ -24,7 +29,6 @@ import { Prisma } from "@/generated/prisma";
 import {
   validateBulkImportRequest,
   validateBulkExportQuery,
-  validateTemplateRequest,
 } from "@/lib/validations/bulk-questions";
 import { excelHandler } from "@/lib/bulk/bulk-formats/excel";
 import { csvHandler } from "@/lib/bulk/bulk-formats/csv";
@@ -35,16 +39,49 @@ import {
   transformToEncrypted,
   mapQuestionToRow,
   getQuestionHeaders,
-  getQuestionDescriptions,
 } from "@/lib/bulk/bulk-questions";
 import type {
   BulkImportResponse,
   BulkExportResponse,
-  TemplateResponse,
   BulkExportQuery,
   QuestionBulkRow,
 } from "@/types/question-api";
 import { ZodError } from "zod";
+
+// ============================================
+// TYPE DEFINITIONS
+// ============================================
+
+/**
+ * Encrypted question data ready for database insertion
+ * This is the EXACT output structure of transformToEncrypted()
+ */
+interface EncryptedQuestionData {
+  examType: "WAEC" | "JAMB" | "NECO" | "GCE" | "NABTEB" | "POST_UTME";
+  year: number;
+  subject: string;
+  questionType: "multiple_choice" | "true_false" | "essay" | "fill_in_blank";
+  questionImage: null;
+  questionPoint: number;
+  difficultyLevel: "easy" | "medium" | "hard";
+  tags: string[];
+  timeLimit: number | null;
+  language: string;
+  createdBy: string;
+  questionText: string; // Encrypted JSON string
+  answerExplanation: string | null; // Encrypted JSON string or null
+  options: EncryptedOptionData[];
+}
+
+/**
+ * Encrypted option data ready for database insertion
+ */
+interface EncryptedOptionData {
+  optionText: string; // Encrypted JSON string
+  optionImage: null;
+  isCorrect: boolean;
+  orderIndex: number;
+}
 
 // ============================================
 // CONSTANTS
@@ -53,7 +90,6 @@ import { ZodError } from "zod";
 const RATE_LIMITS = {
   IMPORT: { MAX: 10, WINDOW: 3600 }, // 10 imports per hour
   EXPORT: { MAX: 20, WINDOW: 3600 }, // 20 exports per hour
-  TEMPLATE: { MAX: 50, WINDOW: 3600 }, // 50 templates per hour
 } as const;
 
 const FILE_LIMITS = {
@@ -282,10 +318,16 @@ export async function bulkImportQuestions(
       };
     }
 
-    // Process bulk data
-    const result = await processBulkData<QuestionBulkRow, unknown>(
+    // ============================================
+    // PROCESS BULK DATA (FIXED)
+    // ============================================
+    const result = await processBulkData<
+      QuestionBulkRow,
+      EncryptedQuestionData
+    >(
       parseResult.data as QuestionBulkRow[],
       {
+        // Validate each row
         validate: async (row, index) => {
           const validation = await mapRowToQuestion(row, index);
           return {
@@ -294,27 +336,52 @@ export async function bulkImportQuestions(
           };
         },
 
+        // Transform validated row to encrypted format
+        // ✅ FIX: Added await for async transformToEncrypted
         transform: async (row, index) => {
           const validation = await mapRowToQuestion(row, index);
           if (!validation.valid || !validation.data) {
             throw new Error("Validation failed");
           }
-          return transformToEncrypted(validation.data, userContext.userId);
+          // transformToEncrypted is async, must await it
+          const encrypted = await transformToEncrypted(
+            validation.data,
+            userContext.userId
+          );
+          return encrypted as EncryptedQuestionData;
         },
 
-        save: async (batch) => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // Save batch to database
+        // ✅ FIX: Removed 'any' type and used proper destructuring
+        save: async (batch: EncryptedQuestionData[]) => {
+          // ✅ FIX: Separate options from question data using destructuring
           const created = await prisma.$transaction(
-            batch.map((item: any) =>
-              prisma.question.create({
+            batch.map((item) => {
+              // Destructure to separate options from question fields
+              const { options, ...questionData } = item;
+
+              // Create question with nested options
+              return prisma.question.create({
                 data: {
-                  ...item,
+                  ...questionData, // ✅ No 'options' conflict
                   options: {
-                    create: item.options,
+                    create: options, // ✅ Clean nested create
                   },
                 },
-              })
-            )
+                include: {
+                  options: true, // ✅ Include options for verification
+                },
+              });
+            })
+          );
+
+          // ✅ Log verification for debugging
+          const totalOptions = created.reduce(
+            (sum, q) => sum + q.options.length,
+            0
+          );
+          console.log(
+            `[BULK IMPORT] Created ${created.length} questions with ${totalOptions} total options`
           );
 
           return {
@@ -342,7 +409,7 @@ export async function bulkImportQuestions(
 
     return {
       success: true,
-      message: validateOnly
+      message: validatedRequest.validateOnly
         ? `Validation complete: ${result.processedCount} valid, ${result.failedCount} invalid`
         : `Import complete: ${result.processedCount} imported, ${result.failedCount} failed`,
       data: {
@@ -487,100 +554,6 @@ export async function bulkExportQuestions(
     return {
       success: false,
       message: "Export failed",
-      code: "INTERNAL_ERROR",
-    };
-  }
-}
-
-// ============================================
-// DOWNLOAD TEMPLATE ACTION
-// ============================================
-
-export async function downloadTemplate(
-  format: "excel" | "csv" | "json"
-): Promise<TemplateResponse> {
-  try {
-    // Check authentication
-    const headersList = await getHeaders();
-    const session = await auth.api.getSession({ headers: headersList });
-
-    if (!session) {
-      return {
-        success: false,
-        message: "Authentication required",
-        code: "UNAUTHORIZED",
-      };
-    }
-
-    // Check rate limit
-    const rateLimit = await checkRateLimit(session.user.id, "TEMPLATE");
-    if (!rateLimit.allowed) {
-      return {
-        success: false,
-        message: `Rate limit exceeded. Try again in ${rateLimit.retryAfter} seconds`,
-        code: "RATE_LIMIT_EXCEEDED",
-      };
-    }
-
-    // Validate request
-    let validatedRequest;
-    try {
-      validatedRequest = validateTemplateRequest({
-        format,
-        includeSamples: true,
-      });
-    } catch (error) {
-      if (error instanceof ZodError) {
-        return {
-          success: false,
-          message: "Invalid format",
-          code: "VALIDATION_ERROR",
-        };
-      }
-      throw error;
-    }
-
-    // Select format handler
-    const handler =
-      validatedRequest.format === "excel"
-        ? excelHandler
-        : validatedRequest.format === "csv"
-          ? csvHandler
-          : jsonHandler;
-
-    // Generate template
-    const headers = getQuestionHeaders();
-    const descriptions = getQuestionDescriptions();
-
-    const templateResult = await handler.generateTemplate(headers, {
-      includeSamples: true,
-      sampleCount: 3,
-      descriptions,
-    });
-
-    // Audit log
-    console.log("[AUDIT] Template Download:", {
-      userId: session.user.id,
-      userEmail: session.user.email,
-      format: validatedRequest.format,
-    });
-
-    return {
-      success: true,
-      message: "Template generated successfully",
-      data: {
-        buffer: templateResult.buffer,
-        filename: templateResult.filename,
-        mimeType: templateResult.mimeType,
-        size: templateResult.size,
-      },
-    };
-  } catch (error) {
-    console.error("Template download error:", error);
-
-    return {
-      success: false,
-      message: "Failed to generate template",
       code: "INTERNAL_ERROR",
     };
   }

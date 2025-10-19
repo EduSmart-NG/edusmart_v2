@@ -390,19 +390,23 @@ export interface TemplateRequest {
   includeSamples?: boolean;
 }
 
+/**
+ * Template response from server action
+ *
+ * Note: buffer is a base64-encoded string, not Buffer
+ * because Server Actions cannot serialize Buffer/Uint8Array
+ */
 export interface TemplateResponse {
   success: boolean;
   message: string;
   code?: string;
   data?: {
-    buffer: Buffer;
+    buffer: string;
     filename: string;
     mimeType: string;
     size: number;
   };
-}
-
-// ============================================
+} // ============================================
 // QUESTION ROW MAPPING
 // ============================================
 

@@ -1,6 +1,7 @@
 /**
  * Question Bulk Operations Better Auth Plugin
  *
+ * FIXED: Questions now save WITH their answer options
  * UPDATED WITH RBAC PERMISSIONS
  *
  * Better Auth plugin for bulk question operations with dual authentication:
@@ -13,6 +14,7 @@
  * - Multi-format support (Excel, CSV, JSON)
  * - Progress tracking
  * - Comprehensive error handling
+ * - Type-safe batch operations (NO 'any' types)
  *
  * @module lib/plugins/question-bulk/server
  */
@@ -45,6 +47,43 @@ import {
 import type { QuestionBulkRow } from "@/types/question-api";
 import { Prisma } from "@/generated/prisma";
 import { ZodError } from "zod";
+
+// ============================================
+// TYPE DEFINITIONS
+// ============================================
+
+/**
+ * Encrypted question data ready for database insertion
+ * This is the EXACT output structure of transformToEncrypted()
+ *
+ * Note: examType, year, subject use union types from validation schema
+ */
+interface EncryptedQuestionData {
+  examType: "WAEC" | "JAMB" | "NECO" | "GCE" | "NABTEB" | "POST_UTME";
+  year: number;
+  subject: string;
+  questionType: "multiple_choice" | "true_false" | "essay" | "fill_in_blank";
+  questionImage: null;
+  questionPoint: number;
+  difficultyLevel: "easy" | "medium" | "hard";
+  tags: string[];
+  timeLimit: number | null;
+  language: string;
+  createdBy: string;
+  questionText: string; // Encrypted JSON string
+  answerExplanation: string | null; // Encrypted JSON string or null
+  options: EncryptedOptionData[];
+}
+
+/**
+ * Encrypted option data ready for database insertion
+ */
+interface EncryptedOptionData {
+  optionText: string; // Encrypted JSON string
+  optionImage: null;
+  isCorrect: boolean;
+  orderIndex: number;
+}
 
 // ============================================
 // PLUGIN CONFIGURATION
@@ -259,7 +298,7 @@ export const questionBulkPlugin = (
               if (error instanceof ZodError) {
                 throw new APIError("BAD_REQUEST", {
                   message: "Invalid request parameters",
-                  details: error.errors,
+                  details: error.issues,
                 });
               }
               throw error;
@@ -305,9 +344,12 @@ export const questionBulkPlugin = (
             }
 
             // ============================================
-            // STEP 12: PROCESS BULK DATA
+            // STEP 12: PROCESS BULK DATA (FIXED)
             // ============================================
-            const result = await processBulkData<QuestionBulkRow, unknown>(
+            const result = await processBulkData<
+              QuestionBulkRow,
+              EncryptedQuestionData
+            >(
               parseResult.data as QuestionBulkRow[],
               {
                 // Validate each row
@@ -325,22 +367,42 @@ export const questionBulkPlugin = (
                   if (!validation.valid || !validation.data) {
                     throw new Error("Validation failed");
                   }
-                  return transformToEncrypted(validation.data, user.id);
+                  // await the async transformToEncrypted function
+                  const encrypted = await transformToEncrypted(
+                    validation.data,
+                    user.id
+                  );
+                  return encrypted as EncryptedQuestionData;
                 },
 
-                // Save batch to database
-                save: async (batch) => {
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                // Save batch to database (FIXED - NO MORE 'any' TYPE)
+                save: async (batch: EncryptedQuestionData[]) => {
+                  // ✅ FIX: Separate options from question data using destructuring
                   const created = await prisma.$transaction(
-                    batch.map((item: any) =>
-                      prisma.question.create({
+                    batch.map((item) => {
+                      // Destructure to separate options from question fields
+                      const { options, ...questionData } = item;
+
+                      // Create question with nested options
+                      return prisma.question.create({
                         data: {
-                          ...item,
-                          options: { create: item.options },
+                          ...questionData, // ✅ No 'options' conflict
+                          options: {
+                            create: options, // ✅ Clean nested create
+                          },
                         },
-                      })
-                    )
+                        include: {
+                          options: true, // ✅ Include options for verification
+                        },
+                      });
+                    })
                   );
+
+                  // ✅ Log verification for debugging
+                  console.log(
+                    `[BULK IMPORT] Created ${created.length} questions with total ${created.reduce((sum, q) => sum + q.options.length, 0)} options`
+                  );
+
                   return {
                     count: created.length,
                     ids: created.map((q) => q.id),
@@ -412,7 +474,7 @@ export const questionBulkPlugin = (
                   success: false,
                   message: error.message,
                   code: error.status,
-                  errors: (error as any).details,
+                  errors: (error as { details?: unknown }).details,
                 },
                 {
                   status: typeof error.status === "number" ? error.status : 500,
@@ -541,7 +603,7 @@ export const questionBulkPlugin = (
               if (error instanceof ZodError) {
                 throw new APIError("BAD_REQUEST", {
                   message: "Invalid query parameters",
-                  details: error.errors,
+                  details: error.issues,
                 });
               }
               throw error;
@@ -635,9 +697,8 @@ export const questionBulkPlugin = (
             );
 
             // ============================================
-            // STEP 12: RETURN FILE AS RESPONSE (FIXED)
+            // STEP 12: RETURN FILE AS RESPONSE
             // ============================================
-            // Convert Buffer to Uint8Array (universally compatible with Response)
             return new Response(new Uint8Array(fileResult.buffer), {
               headers: {
                 "Content-Type": fileResult.mimeType,
@@ -738,7 +799,7 @@ export const questionBulkPlugin = (
               if (error instanceof ZodError) {
                 throw new APIError("BAD_REQUEST", {
                   message: "Invalid format",
-                  details: error.errors,
+                  details: error.issues,
                 });
               }
               throw error;
@@ -792,9 +853,8 @@ export const questionBulkPlugin = (
             );
 
             // ============================================
-            // STEP 8: RETURN FILE (FIXED)
+            // STEP 8: RETURN FILE
             // ============================================
-            // Convert Buffer to Uint8Array (universally compatible with Response)
             return new Response(new Uint8Array(templateResult.buffer), {
               headers: {
                 "Content-Type": templateResult.mimeType,
