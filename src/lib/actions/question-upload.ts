@@ -1,24 +1,3 @@
-/**
- * Question Upload Server Action
- *
- * UPDATED WITH RBAC PERMISSIONS
- *
- * Secure server action for uploading questions with images.
- * Handles authentication, authorization, validation, file uploads,
- * and database transactions with automatic rollback on errors.
- *
- * Security Features:
- * - Session validation via Better Auth
- * - Permission-based access control (upload permission required)
- * - Rate limiting (50 uploads/hour per user)
- * - Input sanitization (Zod + DOMPurify)
- * - File validation (type, size, MIME)
- * - SQL injection prevention (Prisma parameterized queries)
- * - Automatic file cleanup on errors
- *
- * @module lib/actions/question-upload
- */
-
 "use server";
 
 import { auth } from "@/lib/auth";
@@ -611,22 +590,6 @@ async function processFileUploads(
   }
 }
 
-/**
- * Save question to database
- *
- * Creates Question record with nested QuestionOption records.
- * ALL SENSITIVE DATA IS ENCRYPTED AND STORED AS JSON - NO PLAINTEXT.
- * Field names remain unchanged for backwards compatibility.
- * Uses Prisma's implicit transaction via nested create.
- * Automatically rolls back on error.
- *
- * @param validatedData - Validated question data
- * @param questionImagePath - Path to question image (optional)
- * @param optionImagePaths - Map of option image paths by order_index
- * @param userId - User ID creating the question
- * @returns Created question with options
- * @throws Error if database operation fails
- */
 async function saveQuestionToDatabase(
   validatedData: ReturnType<typeof validateQuestionUpload>,
   questionImagePath: string | null,
@@ -790,50 +753,6 @@ async function logQuestionUpload(
   }
 }
 
-// ============================================
-// MAIN SERVER ACTION
-// ============================================
-
-/**
- * Upload Question Server Action
- *
- * Main entry point for question upload from Next.js client components.
- *
- * Process:
- * 1. Validate session and check upload permission (RBAC)
- * 2. Check rate limit
- * 3. Parse FormData (question data + files)
- * 4. Validate question data with Zod
- * 5. Process and upload files
- * 6. Save to database (transaction)
- * 7. Log audit entry
- * 8. Return success response
- *
- * Error Handling:
- * - Automatically cleans up uploaded files on error
- * - Database transaction automatically rolls back on error
- * - Returns typed error responses
- *
- * @param formData - FormData containing question data and images
- * @returns Typed response with success/error details
- *
- * @example
- * ```typescript
- * // Client usage:
- * const formData = new FormData();
- * formData.append("data", JSON.stringify(questionData));
- * formData.append("question_image", questionImageFile);
- * formData.append("option_image_0", optionImageFile);
- *
- * const result = await uploadQuestion(formData);
- *
- * if (result.success) {
- *   console.log("Question uploaded:", result.data.questionId);
- * } else {
- *   console.error("Upload failed:", result.message);
- * }
- * ```
- */
 export async function uploadQuestion(
   formData: FormData
 ): Promise<QuestionUploadResponse> {
