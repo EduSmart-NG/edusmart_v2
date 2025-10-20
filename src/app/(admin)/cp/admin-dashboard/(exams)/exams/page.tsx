@@ -1,20 +1,3 @@
-/**
- * Admin Exams Listing Page - Server Component with URL-based filtering
- *
- * ARCHITECTURE:
- * - Server Component for SEO and performance
- * - URL search params for state management (shareable, bookmarkable)
- * - Server-side filtering, sorting, and pagination
- * - Streaming with Suspense for optimal loading states
- * - Parallel data fetching for stats and table
- *
- * MIGRATION NOTES:
- * - Removed TanStack React Table (unnecessary for server-side operations)
- * - All state now lives in URL (searchParams)
- * - Filters are applied server-side via listExams()
- * - Table data is paginated and only current page is fetched
- */
-
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import {

@@ -1,29 +1,11 @@
 "use client";
 
-/**
- * Exams Table Component - Client Component for table display
- *
- * FEATURES:
- * - Server-rendered data (no client-side filtering/sorting)
- * - URL-based pagination
- * - Row actions (view, edit, duplicate, delete)
- * - Delete confirmation dialog
- * - Responsive design
- * - Loading states with transitions
- *
- * ARCHITECTURE:
- * - Receives pre-filtered/sorted data from server
- * - Uses native HTML table (no TanStack Table)
- * - Pagination via URL params
- */
-
 import * as React from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { format } from "date-fns";
 import {
   MoreHorizontal,
   FileText,
-  Eye,
   Edit,
   Trash2,
   Copy,
@@ -117,7 +99,7 @@ function RowActions({ exam }: { exam: AdminExam }) {
   const router = useRouter();
   const [showDeleteDialog, setShowDeleteDialog] = React.useState(false);
 
-  const handleView = () => {
+  const handleEdit = () => {
     router.push(`/cp/admin-dashboard/exams/${exam.id}`);
   };
 
@@ -143,16 +125,9 @@ function RowActions({ exam }: { exam: AdminExam }) {
           <DropdownMenuLabel>Actions</DropdownMenuLabel>
           <DropdownMenuSeparator />
 
-          <DropdownMenuItem onClick={handleView}>
-            <Eye className="mr-2 h-4 w-4" />
-            View Details
-          </DropdownMenuItem>
-
-          <DropdownMenuItem asChild>
-            <Link href={`/cp/admin-dashboard/exams/${exam.id}/edit`}>
-              <Edit className="mr-2 h-4 w-4" />
-              Edit Exam
-            </Link>
+          <DropdownMenuItem onClick={handleEdit}>
+            <Edit className="mr-2 h-4 w-4" />
+            Edit
           </DropdownMenuItem>
 
           <DropdownMenuItem onClick={handleDuplicate}>
@@ -337,14 +312,17 @@ export function ExamsTable({
 
               return (
                 <TableRow key={exam.id}>
-                  {/* Title */}
+                  {/* Title - Clickable */}
                   <TableCell>
-                    <div className="flex flex-col">
+                    <Link
+                      href={`/cp/admin-dashboard/exams/${exam.id}`}
+                      className="flex flex-col hover:underline"
+                    >
                       <span className="font-medium">{exam.title}</span>
                       <Badge variant="outline" className="mt-1 w-fit text-xs">
                         {exam.examType}
                       </Badge>
-                    </div>
+                    </Link>
                   </TableCell>
 
                   {/* Subject */}
