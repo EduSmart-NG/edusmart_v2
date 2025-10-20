@@ -1,8 +1,8 @@
 /**
- * Exam Upload Server Actions
+ * Exam Upload Server Actions - SIMPLIFIED WITHOUT SLUG
  *
  * Secure server actions for exam CRUD operations.
- * Handles authentication, authorization, validation, and database transactions.
+ * Uses exam ID for routing instead of slugs.
  *
  * Security Features:
  * - Session validation via Better Auth
@@ -26,7 +26,6 @@ import {
   formatValidationErrors,
 } from "@/lib/validations/exam";
 import { decryptQuestion } from "@/lib/utils/question-decrypt";
-import { generateSlugFromTitle } from "../utils/exam-detail-slug";
 import type {
   ExamUploadResponse,
   ExamDeleteResponse,
@@ -229,9 +228,6 @@ export async function createExam(
         formData.get("question_ids") as string
       ) as string[],
     };
-
-    // Log parsed data for debugging
-    console.log("Server received data:", data);
 
     // STEP 4: Validate data
     let validatedData;
@@ -676,12 +672,11 @@ export async function searchQuestions(
             })),
           };
         } catch (error) {
-          // Log decryption error but don't fail entire request
           console.error(`Failed to decrypt question ${q.id}:`, error);
-          return null; // Return null for failed decryption
+          return null;
         }
       })
-      .filter((q): q is QuestionDecrypted => q !== null); // Filter out null values
+      .filter((q): q is QuestionDecrypted => q !== null);
 
     return {
       success: true,
@@ -702,7 +697,7 @@ export async function searchQuestions(
 }
 
 // ============================================
-// LIST EXAMS (ENHANCED FOR ADMIN LISTING PAGE)
+// LIST EXAMS
 // ============================================
 
 /**
@@ -733,7 +728,7 @@ export async function listExams(
       headers: headersList,
     });
 
-    // STEP 2: Check rate limit (100 requests per minute)
+    // STEP 2: Check rate limit
     const rateLimitResult = await checkRateLimit(
       "admin:list-exams",
       {
@@ -751,7 +746,7 @@ export async function listExams(
       };
     }
 
-    // STEP 3: Build WHERE clause with filters and search
+    // STEP 3: Build WHERE clause
     interface WhereClause {
       deletedAt: null;
       status?: string;
@@ -767,10 +762,9 @@ export async function listExams(
     }
 
     const where: WhereClause = {
-      deletedAt: null, // CRITICAL: Only show non-deleted exams
+      deletedAt: null,
     };
 
-    // Apply filters from query
     if (query?.status) {
       where.status = query.status;
     }
@@ -784,48 +778,27 @@ export async function listExams(
       where.year = query.year;
     }
 
-    // Apply search (searches across title, subject, examType, year)
-    // Note: MySQL is case-insensitive by default
     if (query?.search && query.search.trim()) {
       const searchTerm = query.search.trim();
       where.OR = [
-        {
-          title: {
-            contains: searchTerm,
-          },
-        },
-        {
-          subject: {
-            contains: searchTerm,
-          },
-        },
-        {
-          examType: {
-            contains: searchTerm,
-          },
-        },
-        // Search by year if it's a number
-        ...(isNaN(Number(searchTerm))
-          ? []
-          : [
-              {
-                year: Number(searchTerm),
-              },
-            ]),
+        { title: { contains: searchTerm } },
+        { subject: { contains: searchTerm } },
+        { examType: { contains: searchTerm } },
+        ...(isNaN(Number(searchTerm)) ? [] : [{ year: Number(searchTerm) }]),
       ];
     }
 
-    // STEP 4: Build ORDER BY clause
+    // STEP 4: Build ORDER BY
     const sortBy = query?.sortBy || "createdAt";
     const sortOrder = query?.sortOrder || "desc";
     const orderBy: Record<string, string> = {};
     orderBy[sortBy] = sortOrder;
 
-    // STEP 5: Calculate pagination
-    const limit = query?.limit || 20; // Default 20 exams per page
+    // STEP 5: Pagination
+    const limit = query?.limit || 20;
     const offset = query?.offset || 0;
 
-    // STEP 6: Query exams with stats
+    // STEP 6: Query exams
     const [exams, total] = await Promise.all([
       prisma.exam.findMany({
         where,
@@ -844,27 +817,23 @@ export async function listExams(
         take: limit,
         skip: offset,
       }),
-      // Get total count for pagination
       prisma.exam.count({ where }),
     ]);
 
-    // STEP 7: Add computed fields and stats
+    // STEP 7: Add computed fields
     const examsWithStats: AdminExam[] = await Promise.all(
       exams.map(async (exam) => {
-        // Get creator name
         const creator = await prisma.user.findUnique({
           where: { id: exam.createdBy },
           select: { name: true },
         });
 
-        // Calculate stats
         const questionCount = exam.questions.length;
         const totalPoints = exam.questions.reduce(
           (sum, q) => sum + q.question.questionPoint,
           0
         );
 
-        // Check if exam is currently active
         const now = new Date();
         const isActive =
           exam.status === "published" &&
@@ -889,7 +858,6 @@ export async function listExams(
       offset,
     });
 
-    // STEP 9: Return response
     return {
       success: true,
       message: "Exams retrieved successfully",
@@ -902,7 +870,6 @@ export async function listExams(
     };
   } catch (error) {
     console.error("List exams error:", error);
-
     return {
       success: false,
       message: "Failed to list exams",
@@ -925,7 +892,6 @@ export async function listExams(
  */
 export async function getExamStats(): Promise<AdminActionResult<ExamStats>> {
   try {
-    // Verify admin access
     const adminContext = await verifyAdminAccess();
     if (!adminContext) {
       return {
@@ -940,7 +906,6 @@ export async function getExamStats(): Promise<AdminActionResult<ExamStats>> {
     const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
     const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-    // Query all stats in parallel
     const [
       totalExams,
       publishedExams,
@@ -1001,22 +966,21 @@ export async function getExamStats(): Promise<AdminActionResult<ExamStats>> {
 }
 
 // ============================================
-// GET EXAM BY SLUG (FOR EDITING)
+// GET EXAM BY ID
 // ============================================
 
 /**
- * Get exam by slug for editing (admin only)
+ * Get exam by ID for editing (admin only)
  *
  * Fetches complete exam details including decrypted questions.
- * The slug is generated from the exam title for SEO-friendly URLs.
  *
  * ✅ SECURED: Admin-only access
  * ✅ Audit: Logs admin viewing exam details
  *
- * @param slug - URL-safe slug generated from exam title (e.g., "waec-mathematics-2024")
+ * @param examId - Exam ID
  * @returns Exam data with decrypted questions or error
  */
-export async function getExamBySlug(slug: string): Promise<
+export async function getExamById(examId: string): Promise<
   AdminActionResult<{
     exam: {
       id: string;
@@ -1054,10 +1018,10 @@ export async function getExamBySlug(slug: string): Promise<
       };
     }
 
-    // STEP 2: Fetch all non-deleted exams
-    // We need to fetch all exams to match slugs since slugs are generated on-the-fly
-    const exams = await prisma.exam.findMany({
+    // STEP 2: Query exam by ID
+    const exam = await prisma.exam.findUnique({
       where: {
+        id: examId,
         deletedAt: null,
       },
       include: {
@@ -1076,10 +1040,6 @@ export async function getExamBySlug(slug: string): Promise<
       },
     });
 
-    // STEP 3: Find matching exam by comparing slugified titles
-    // MySQL is case-insensitive by default, so slug matching will be case-insensitive
-    const exam = exams.find((e) => generateSlugFromTitle(e.title) === slug);
-
     if (!exam) {
       return {
         success: false,
@@ -1088,7 +1048,7 @@ export async function getExamBySlug(slug: string): Promise<
       };
     }
 
-    // STEP 4: Decrypt questions
+    // STEP 3: Decrypt questions
     const decryptedQuestions: QuestionDecrypted[] = exam.questions
       .map((eq) => {
         try {
@@ -1129,7 +1089,7 @@ export async function getExamBySlug(slug: string): Promise<
       })
       .filter((q): q is QuestionDecrypted => q !== null);
 
-    // STEP 5: Prepare response data
+    // STEP 4: Prepare response data
     const examData = {
       id: exam.id,
       examType: exam.examType,
@@ -1154,11 +1114,10 @@ export async function getExamBySlug(slug: string): Promise<
       questions: decryptedQuestions,
     };
 
-    // STEP 6: Audit log
+    // STEP 5: Audit log
     await logAuditEntry(adminContext, "VIEW_EXAM", {
       examId: exam.id,
       examTitle: exam.title,
-      slug,
     });
 
     return {
@@ -1167,7 +1126,7 @@ export async function getExamBySlug(slug: string): Promise<
       data: { exam: examData },
     };
   } catch (error) {
-    console.error("Get exam by slug error:", error);
+    console.error("Get exam by ID error:", error);
     return {
       success: false,
       message: "Failed to retrieve exam",
