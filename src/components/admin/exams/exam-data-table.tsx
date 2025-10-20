@@ -63,6 +63,20 @@ interface ExamsTableProps {
 // HELPER FUNCTIONS
 // ============================================
 
+/**
+ * Generate URL-safe slug from exam title
+ * Must match the logic in src/lib/utils/slug.ts
+ */
+function generateSlugFromTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, "")
+    .replace(/[\s_]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 function getStatusVariant(
   status: string
 ): "default" | "secondary" | "destructive" | "outline" {
@@ -99,8 +113,11 @@ function RowActions({ exam }: { exam: AdminExam }) {
   const router = useRouter();
   const [showDeleteDialog, setShowDeleteDialog] = React.useState(false);
 
+  // Generate slug from exam title
+  const examSlug = generateSlugFromTitle(exam.title);
+
   const handleEdit = () => {
-    router.push(`/cp/admin-dashboard/exams/${exam.id}`);
+    router.push(`/cp/admin-dashboard/exams/${examSlug}`);
   };
 
   const handleDuplicate = () => {
@@ -310,12 +327,15 @@ export function ExamsTable({
               if (hours > 0) durationText += `${hours}h `;
               if (minutes > 0 || hours === 0) durationText += `${minutes}m`;
 
+              // Generate slug for this exam
+              const examSlug = generateSlugFromTitle(exam.title);
+
               return (
                 <TableRow key={exam.id}>
                   {/* Title - Clickable */}
                   <TableCell>
                     <Link
-                      href={`/cp/admin-dashboard/exams/${exam.id}`}
+                      href={`/cp/admin-dashboard/exams/${examSlug}`}
                       className="flex flex-col hover:underline"
                     >
                       <span className="font-medium">{exam.title}</span>

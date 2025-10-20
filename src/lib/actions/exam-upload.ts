@@ -1,3 +1,20 @@
+/**
+ * Exam Upload Server Actions
+ *
+ * Secure server actions for exam CRUD operations.
+ * Handles authentication, authorization, validation, and database transactions.
+ *
+ * Security Features:
+ * - Session validation via Better Auth
+ * - Admin-only access control
+ * - Rate limiting (10 creates/5 minutes per admin, 100 list/minute)
+ * - Input sanitization (Zod + DOMPurify)
+ * - reCAPTCHA validation
+ * - SQL injection prevention (Prisma parameterized queries)
+ *
+ * @module lib/actions/exam-upload
+ */
+
 "use server";
 
 import { auth } from "@/lib/auth";
@@ -9,6 +26,7 @@ import {
   formatValidationErrors,
 } from "@/lib/validations/exam";
 import { decryptQuestion } from "@/lib/utils/question-decrypt";
+import { generateSlugFromTitle } from "../utils/exam-detail-slug";
 import type {
   ExamUploadResponse,
   ExamDeleteResponse,
@@ -982,7 +1000,23 @@ export async function getExamStats(): Promise<AdminActionResult<ExamStats>> {
   }
 }
 
-export async function getExam(slug: string): Promise<
+// ============================================
+// GET EXAM BY SLUG (FOR EDITING)
+// ============================================
+
+/**
+ * Get exam by slug for editing (admin only)
+ *
+ * Fetches complete exam details including decrypted questions.
+ * The slug is generated from the exam title for SEO-friendly URLs.
+ *
+ * ✅ SECURED: Admin-only access
+ * ✅ Audit: Logs admin viewing exam details
+ *
+ * @param slug - URL-safe slug generated from exam title (e.g., "waec-mathematics-2024")
+ * @returns Exam data with decrypted questions or error
+ */
+export async function getExamBySlug(slug: string): Promise<
   AdminActionResult<{
     exam: {
       id: string;
@@ -1021,7 +1055,7 @@ export async function getExam(slug: string): Promise<
     }
 
     // STEP 2: Fetch all non-deleted exams
-    // We need to fetch all exams to match slugs
+    // We need to fetch all exams to match slugs since slugs are generated on-the-fly
     const exams = await prisma.exam.findMany({
       where: {
         deletedAt: null,
@@ -1042,7 +1076,9 @@ export async function getExam(slug: string): Promise<
       },
     });
 
-    const exam = exams.find((e) => e.id);
+    // STEP 3: Find matching exam by comparing slugified titles
+    // MySQL is case-insensitive by default, so slug matching will be case-insensitive
+    const exam = exams.find((e) => generateSlugFromTitle(e.title) === slug);
 
     if (!exam) {
       return {

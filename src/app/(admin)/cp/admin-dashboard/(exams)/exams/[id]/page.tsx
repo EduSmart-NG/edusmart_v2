@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { Metadata } from "next";
 import CreateExamForm from "@/components/admin/exams/exam-form";
-import { getExam } from "@/lib/actions/exam-upload";
+import { getExamBySlug } from "@/lib/actions/exam-upload";
 
 // ============================================
 // TYPES
@@ -23,7 +23,7 @@ export async function generateMetadata({
   const { slug } = await params;
 
   // Fetch exam for metadata
-  const result = await getExam(slug);
+  const result = await getExamBySlug(slug);
 
   if (!result.success || !result.data) {
     return {
@@ -48,7 +48,7 @@ export default async function ExamDetailPage({ params }: PageProps) {
   const { slug } = await params;
 
   // Fetch exam data
-  const result = await getExam(slug);
+  const result = await getExamBySlug(slug);
 
   // Handle not found
   if (!result.success || !result.data) {
