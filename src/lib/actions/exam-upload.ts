@@ -26,6 +26,7 @@ import {
   formatValidationErrors,
 } from "@/lib/validations/exam";
 import { decryptQuestion } from "@/lib/utils/question-decrypt";
+import { generateSlugFromTitle } from "../utils/exam-detail-slug";
 import type {
   ExamUploadResponse,
   ExamDeleteResponse,
@@ -784,7 +785,7 @@ export async function listExams(
     }
 
     // Apply search (searches across title, subject, examType, year)
-    // Note: Using contains without mode for database compatibility (SQLite, MySQL < 5.7)
+    // Note: MySQL is case-insensitive by default
     if (query?.search && query.search.trim()) {
       const searchTerm = query.search.trim();
       where.OR = [
@@ -912,7 +913,7 @@ export async function listExams(
 }
 
 // ============================================
-// GET EXAM STATISTICS (NEW)
+// GET EXAM STATISTICS
 // ============================================
 
 /**
@@ -993,6 +994,183 @@ export async function getExamStats(): Promise<AdminActionResult<ExamStats>> {
     return {
       success: false,
       message: "Failed to retrieve statistics",
+      error: error instanceof Error ? error.message : "Unknown error",
+      code: "INTERNAL_ERROR",
+    };
+  }
+}
+
+// ============================================
+// GET EXAM BY SLUG (FOR EDITING)
+// ============================================
+
+/**
+ * Get exam by slug for editing (admin only)
+ *
+ * Fetches complete exam details including decrypted questions.
+ * The slug is generated from the exam title for SEO-friendly URLs.
+ *
+ * ✅ SECURED: Admin-only access
+ * ✅ Audit: Logs admin viewing exam details
+ *
+ * @param slug - URL-safe slug generated from exam title (e.g., "waec-mathematics-2024")
+ * @returns Exam data with decrypted questions or error
+ */
+export async function getExamBySlug(slug: string): Promise<
+  AdminActionResult<{
+    exam: {
+      id: string;
+      examType: string;
+      subject: string;
+      year: number;
+      title: string;
+      description: string | null;
+      duration: number;
+      passingScore: number | null;
+      maxAttempts: number | null;
+      shuffleQuestions: boolean;
+      randomizeOptions: boolean;
+      isPublic: boolean;
+      isFree: boolean;
+      status: string;
+      category: string | null;
+      startDate: Date | null;
+      endDate: Date | null;
+      createdBy: string;
+      createdAt: Date;
+      updatedAt: Date;
+      questions: QuestionDecrypted[];
+    };
+  }>
+> {
+  try {
+    // STEP 1: Verify admin access
+    const adminContext = await verifyAdminAccess();
+    if (!adminContext) {
+      return {
+        success: false,
+        message: "Admin access required",
+        code: "FORBIDDEN",
+      };
+    }
+
+    // STEP 2: Fetch all non-deleted exams
+    // We need to fetch all exams to match slugs since slugs are generated on-the-fly
+    const exams = await prisma.exam.findMany({
+      where: {
+        deletedAt: null,
+      },
+      include: {
+        questions: {
+          include: {
+            question: {
+              include: {
+                options: {
+                  orderBy: { orderIndex: "asc" },
+                },
+              },
+            },
+          },
+          orderBy: { orderIndex: "asc" },
+        },
+      },
+    });
+
+    // STEP 3: Find matching exam by comparing slugified titles
+    // MySQL is case-insensitive by default, so slug matching will be case-insensitive
+    const exam = exams.find((e) => generateSlugFromTitle(e.title) === slug);
+
+    if (!exam) {
+      return {
+        success: false,
+        message: "Exam not found",
+        code: "EXAM_NOT_FOUND",
+      };
+    }
+
+    // STEP 4: Decrypt questions
+    const decryptedQuestions: QuestionDecrypted[] = exam.questions
+      .map((eq) => {
+        try {
+          const decrypted = decryptQuestion(eq.question);
+          return {
+            id: decrypted.id,
+            examType: decrypted.examType,
+            year: decrypted.year,
+            subject: decrypted.subject,
+            questionType: decrypted.questionType,
+            questionText: decrypted.questionText,
+            questionImage: decrypted.questionImage,
+            questionPoint: decrypted.questionPoint,
+            answerExplanation: decrypted.answerExplanation,
+            difficultyLevel: decrypted.difficultyLevel,
+            tags: Array.isArray(decrypted.tags)
+              ? decrypted.tags
+              : JSON.parse(decrypted.tags as string),
+            timeLimit: decrypted.timeLimit,
+            language: decrypted.language,
+            createdBy: decrypted.createdBy,
+            createdAt: decrypted.createdAt,
+            updatedAt: decrypted.updatedAt,
+            deletedAt: decrypted.deletedAt,
+            options: decrypted.options.map((opt) => ({
+              id: opt.id,
+              questionId: opt.questionId,
+              optionText: opt.optionText,
+              optionImage: opt.optionImage,
+              isCorrect: opt.isCorrect,
+              orderIndex: opt.orderIndex,
+            })),
+          };
+        } catch (error) {
+          console.error(`Failed to decrypt question ${eq.question.id}:`, error);
+          return null;
+        }
+      })
+      .filter((q): q is QuestionDecrypted => q !== null);
+
+    // STEP 5: Prepare response data
+    const examData = {
+      id: exam.id,
+      examType: exam.examType,
+      subject: exam.subject,
+      year: exam.year,
+      title: exam.title,
+      description: exam.description,
+      duration: exam.duration,
+      passingScore: exam.passingScore,
+      maxAttempts: exam.maxAttempts,
+      shuffleQuestions: exam.shuffleQuestions,
+      randomizeOptions: exam.randomizeOptions,
+      isPublic: exam.isPublic,
+      isFree: exam.isFree,
+      status: exam.status,
+      category: exam.category,
+      startDate: exam.startDate,
+      endDate: exam.endDate,
+      createdBy: exam.createdBy,
+      createdAt: exam.createdAt,
+      updatedAt: exam.updatedAt,
+      questions: decryptedQuestions,
+    };
+
+    // STEP 6: Audit log
+    await logAuditEntry(adminContext, "VIEW_EXAM", {
+      examId: exam.id,
+      examTitle: exam.title,
+      slug,
+    });
+
+    return {
+      success: true,
+      message: "Exam retrieved successfully",
+      data: { exam: examData },
+    };
+  } catch (error) {
+    console.error("Get exam by slug error:", error);
+    return {
+      success: false,
+      message: "Failed to retrieve exam",
       error: error instanceof Error ? error.message : "Unknown error",
       code: "INTERNAL_ERROR",
     };

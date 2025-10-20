@@ -73,7 +73,6 @@ interface CreateExamFormProps {
 
 export default function CreateExamForm({
   initialData = {},
-  onSubmit,
   isEditing = false,
   examId,
 }: CreateExamFormProps) {
@@ -240,35 +239,35 @@ export default function CreateExamForm({
     return Object.keys(newErrors).length === 0;
   }, [formData, selectedQuestions.length]);
 
-  const resetForm = useCallback(() => {
-    setFormData({
-      exam_type: initialData.exam_type || "",
-      subject: initialData.subject || "",
-      year: initialData.year || "",
-      title: initialData.title || "",
-      description: initialData.description || "",
-      duration: initialData.duration || "",
-      passing_score: initialData.passing_score || "",
-      max_attempts: initialData.max_attempts || "",
-      shuffle_questions: initialData.shuffle_questions || false,
-      randomize_options: initialData.randomize_options || false,
-      is_public: initialData.is_public || false,
-      is_free: initialData.is_free || false,
-      status: initialData.status || "draft",
-      category: initialData.category || "",
-      start_date: initialData.start_date || "",
-      end_date: initialData.end_date || "",
-    });
+  // const resetForm = useCallback(() => {
+  //   setFormData({
+  //     exam_type: initialData.exam_type || "",
+  //     subject: initialData.subject || "",
+  //     year: initialData.year || "",
+  //     title: initialData.title || "",
+  //     description: initialData.description || "",
+  //     duration: initialData.duration || "",
+  //     passing_score: initialData.passing_score || "",
+  //     max_attempts: initialData.max_attempts || "",
+  //     shuffle_questions: initialData.shuffle_questions || false,
+  //     randomize_options: initialData.randomize_options || false,
+  //     is_public: initialData.is_public || false,
+  //     is_free: initialData.is_free || false,
+  //     status: initialData.status || "draft",
+  //     category: initialData.category || "",
+  //     start_date: initialData.start_date || "",
+  //     end_date: initialData.end_date || "",
+  //   });
 
-    setSelectedQuestions(initialData.questions || []);
-    setStartDate(
-      initialData.start_date ? new Date(initialData.start_date) : undefined
-    );
-    setEndDate(
-      initialData.end_date ? new Date(initialData.end_date) : undefined
-    );
-    setErrors({});
-  }, [initialData]);
+  //   setSelectedQuestions(initialData.questions || []);
+  //   setStartDate(
+  //     initialData.start_date ? new Date(initialData.start_date) : undefined
+  //   );
+  //   setEndDate(
+  //     initialData.end_date ? new Date(initialData.end_date) : undefined
+  //   );
+  //   setErrors({});
+  // }, [initialData]);
 
   const handleSubmit = useCallback(
     async (addAnother: boolean = false) => {
@@ -324,23 +323,6 @@ export default function CreateExamForm({
           JSON.stringify(selectedQuestions.map((q) => q.id))
         );
 
-        // Log data being sent for debugging
-        console.log("Form data being sent:", {
-          exam_type: formData.exam_type,
-          subject: formData.subject,
-          year: formData.year,
-          title: formData.title,
-          description: formData.description,
-          duration: formData.duration,
-          passing_score: formData.passing_score,
-          max_attempts: formData.max_attempts,
-          status: formData.status,
-          category: formData.category,
-          start_date: formData.start_date,
-          end_date: formData.end_date,
-          question_count: selectedQuestions.length,
-        });
-
         // Call appropriate server action
         const result =
           isEditing && examId
@@ -349,25 +331,17 @@ export default function CreateExamForm({
 
         if (result.success) {
           toast.success(result.message, {
-            description: `Exam ID: ${result.data.examId}`,
+            description: `Exam ${isEditing ? "updated" : "created"} successfully`,
             duration: 5000,
           });
 
-          // Call custom onSubmit if provided
-          if (onSubmit) {
-            try {
-              await onSubmit(result.data);
-            } catch (error) {
-              console.error("Custom onSubmit handler error:", error);
-            }
-          }
-
-          // Reset form if adding another
+          // Handle navigation based on button clicked
           if (addAnother) {
-            resetForm();
-            setShowQuestionSearch(false);
+            // "Save and Add Another" - Go to new exam form
+            router.push("/cp/admin-dashboard/exams/new");
           } else {
-            router.replace("/cp/admin-dashboard/exams/");
+            // "Save and Exit" - Go back to exam listing
+            router.push("/cp/admin-dashboard/exams/");
           }
         } else {
           // Show detailed error message
@@ -401,9 +375,7 @@ export default function CreateExamForm({
       formData,
       selectedQuestions,
       examId,
-      onSubmit,
       router,
-      resetForm,
     ]
   );
 
