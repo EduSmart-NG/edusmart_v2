@@ -20,7 +20,6 @@ import type {
   QuestionUploadResponse,
 } from "@/types/question-api";
 import { ZodError } from "zod";
-// ✅ NEW: Import RBAC utilities
 import { hasPermission } from "@/lib/rbac/utils";
 import { Prisma } from "@/generated/prisma";
 import { decryptQuestion } from "../utils/question-decrypt";
@@ -29,31 +28,20 @@ import { decryptQuestion } from "../utils/question-decrypt";
 // CONSTANTS
 // ============================================
 
-/**
- * Rate limiting configuration
- * 50 uploads per hour per user
- */
 const RATE_LIMIT = {
   MAX_UPLOADS: 50,
-  WINDOW_SECONDS: 3600, // 1 hour
+  WINDOW_SECONDS: 3600,
 } as const;
 
-/**
- * Rate limiting configuration for list operations
- * 100 requests per minute per user
- */
 const LIST_RATE_LIMIT = {
   MAX_REQUESTS: 100,
-  WINDOW_SECONDS: 60, // 1 minute
+  WINDOW_SECONDS: 60,
 } as const;
 
 // ============================================
 // TYPES
 // ============================================
 
-/**
- * User authorization context
- */
 interface UserContext {
   userId: string;
   userEmail: string;
@@ -61,58 +49,41 @@ interface UserContext {
   userName: string;
 }
 
-/**
- * Rate limit check result
- */
 interface RateLimitResult {
   allowed: boolean;
   remaining?: number;
-  retryAfter?: number; // seconds until reset
+  retryAfter?: number;
 }
 
-/**
- * Parsed FormData result
- */
 interface ParsedFormData {
   questionData: unknown;
   questionImageFile: File | null;
   optionImageFiles: Map<number, File>;
 }
 
-/**
- * File upload result
- */
 interface FileUploadResult {
   questionImagePath: string | null;
   optionImagePaths: Map<number, string>;
-  uploadedFiles: string[]; // For rollback
+  uploadedFiles: string[];
+}
+
+interface RateLimitData {
+  uploads: number;
+  firstUpload: string;
+  windowExpires: string;
 }
 
 // ============================================
 // HELPER FUNCTIONS
 // ============================================
 
-/**
- * Check session and authorization with RBAC
- *
- * ✅ UPDATED: Uses Better Auth permission checking instead of role strings
- *
- * Validates:
- * - Session exists and is valid
- * - User has question upload permission (admin or exam_manager)
- *
- * @returns User context with session details
- * @throws Error if unauthorized
- */
 async function checkAuthorizationAndSession(): Promise<UserContext> {
   try {
-    // Get session from Better Auth
     const headersList = await headers();
     const session = await auth.api.getSession({
       headers: headersList,
     });
 
-    // Validate session exists
     if (!session) {
       throw new Error(
         JSON.stringify({
@@ -122,7 +93,6 @@ async function checkAuthorizationAndSession(): Promise<UserContext> {
       );
     }
 
-    // ✅ NEW: Check permission using Better Auth RBAC
     const canUpload = await hasPermission({ question: ["upload"] });
 
     if (!canUpload) {
@@ -134,7 +104,6 @@ async function checkAuthorizationAndSession(): Promise<UserContext> {
       );
     }
 
-    // Get user details from database for complete context
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },
       select: {
@@ -155,7 +124,6 @@ async function checkAuthorizationAndSession(): Promise<UserContext> {
       );
     }
 
-    // Check if user is banned
     if (user.banned) {
       throw new Error(
         JSON.stringify({
@@ -165,7 +133,6 @@ async function checkAuthorizationAndSession(): Promise<UserContext> {
       );
     }
 
-    // Return user context
     return {
       userId: user.id,
       userEmail: user.email,
@@ -173,7 +140,6 @@ async function checkAuthorizationAndSession(): Promise<UserContext> {
       userName: user.name,
     };
   } catch (error) {
-    // Re-throw with proper error structure
     if (error instanceof Error && error.message.startsWith("{")) {
       throw error;
     }
@@ -186,27 +152,6 @@ async function checkAuthorizationAndSession(): Promise<UserContext> {
   }
 }
 
-/**
- * Rate limit data structure
- */
-interface RateLimitData {
-  uploads: number;
-  firstUpload: string; // ISO timestamp
-  windowExpires: string; // ISO timestamp
-}
-
-/**
- * Check rate limit for user
- *
- * Uses Redis/MySQL to track upload attempts per user.
- * Limit: 50 uploads per hour (3600 seconds).
- *
- * Pattern: Stores JSON data with upload count and timestamps,
- * similar to password reset rate limiting in the codebase.
- *
- * @param userId - User ID to check
- * @returns Rate limit result
- */
 async function checkRateLimit(userId: string): Promise<RateLimitResult> {
   try {
     const key = `question_upload:${userId}`;
@@ -216,7 +161,6 @@ async function checkRateLimit(userId: string): Promise<RateLimitResult> {
     let rateLimitData: RateLimitData;
 
     if (!data) {
-      // First upload - create new record
       const windowExpires = new Date(
         now.getTime() + RATE_LIMIT.WINDOW_SECONDS * 1000
       );
@@ -227,7 +171,6 @@ async function checkRateLimit(userId: string): Promise<RateLimitResult> {
         windowExpires: windowExpires.toISOString(),
       };
 
-      // Store with TTL
       await redis.set(
         key,
         JSON.stringify(rateLimitData),
@@ -240,13 +183,10 @@ async function checkRateLimit(userId: string): Promise<RateLimitResult> {
       };
     }
 
-    // Parse existing data
     rateLimitData = JSON.parse(data);
     const windowExpires = new Date(rateLimitData.windowExpires);
 
-    // Check if window has expired
     if (now > windowExpires) {
-      // Window expired - reset counter
       const newWindowExpires = new Date(
         now.getTime() + RATE_LIMIT.WINDOW_SECONDS * 1000
       );
@@ -269,7 +209,6 @@ async function checkRateLimit(userId: string): Promise<RateLimitResult> {
       };
     }
 
-    // Window is active - check if limit exceeded
     if (rateLimitData.uploads >= RATE_LIMIT.MAX_UPLOADS) {
       const retryAfter = Math.ceil(
         (windowExpires.getTime() - now.getTime()) / 1000
@@ -281,15 +220,12 @@ async function checkRateLimit(userId: string): Promise<RateLimitResult> {
       };
     }
 
-    // Increment counter
     rateLimitData.uploads += 1;
 
-    // Calculate remaining TTL
     const remainingTTL = Math.ceil(
       (windowExpires.getTime() - now.getTime()) / 1000
     );
 
-    // Update data with remaining TTL
     await redis.set(
       key,
       JSON.stringify(rateLimitData),
@@ -302,20 +238,10 @@ async function checkRateLimit(userId: string): Promise<RateLimitResult> {
     };
   } catch (error) {
     console.error("Rate limit check failed:", error);
-    // Fail open - allow upload if rate limiting fails
     return { allowed: true };
   }
 }
 
-/**
- * Check rate limit for list operations
- *
- * Uses Redis/MySQL to track list requests per user.
- * Limit: 100 requests per minute (60 seconds).
- *
- * @param userId - User ID to check
- * @returns Rate limit result
- */
 async function checkListRateLimit(userId: string): Promise<RateLimitResult> {
   try {
     const key = `question_list:${userId}`;
@@ -325,18 +251,16 @@ async function checkListRateLimit(userId: string): Promise<RateLimitResult> {
     let rateLimitData: RateLimitData;
 
     if (!data) {
-      // First request - create new record
       const windowExpires = new Date(
         now.getTime() + LIST_RATE_LIMIT.WINDOW_SECONDS * 1000
       );
 
       rateLimitData = {
-        uploads: 1, // Using same field name for consistency
+        uploads: 1,
         firstUpload: now.toISOString(),
         windowExpires: windowExpires.toISOString(),
       };
 
-      // Store with TTL
       await redis.set(
         key,
         JSON.stringify(rateLimitData),
@@ -349,13 +273,10 @@ async function checkListRateLimit(userId: string): Promise<RateLimitResult> {
       };
     }
 
-    // Parse existing data
     rateLimitData = JSON.parse(data);
     const windowExpires = new Date(rateLimitData.windowExpires);
 
-    // Check if window has expired
     if (now > windowExpires) {
-      // Window expired - reset counter
       const newWindowExpires = new Date(
         now.getTime() + LIST_RATE_LIMIT.WINDOW_SECONDS * 1000
       );
@@ -378,7 +299,6 @@ async function checkListRateLimit(userId: string): Promise<RateLimitResult> {
       };
     }
 
-    // Window is active - check if limit exceeded
     if (rateLimitData.uploads >= LIST_RATE_LIMIT.MAX_REQUESTS) {
       const retryAfter = Math.ceil(
         (windowExpires.getTime() - now.getTime()) / 1000
@@ -391,15 +311,12 @@ async function checkListRateLimit(userId: string): Promise<RateLimitResult> {
       };
     }
 
-    // Increment counter
     rateLimitData.uploads += 1;
 
-    // Calculate remaining TTL
     const remainingTTL = Math.ceil(
       (windowExpires.getTime() - now.getTime()) / 1000
     );
 
-    // Update data with remaining TTL
     await redis.set(
       key,
       JSON.stringify(rateLimitData),
@@ -412,26 +329,12 @@ async function checkListRateLimit(userId: string): Promise<RateLimitResult> {
     };
   } catch (error) {
     console.error("List rate limit check failed:", error);
-    // Fail open - allow request if rate limiting fails
     return { allowed: true };
   }
 }
 
-/**
- * Parse FormData from request
- *
- * Extracts:
- * - JSON question data from 'data' field
- * - Question image from 'question_image' field
- * - Option images from 'option_image_{index}' fields
- *
- * @param formData - FormData from request
- * @returns Parsed data and files
- * @throws Error if parsing fails
- */
 async function parseFormData(formData: FormData): Promise<ParsedFormData> {
   try {
-    // Extract and parse JSON data
     const dataString = formData.get("data");
 
     if (!dataString || typeof dataString !== "string") {
@@ -445,7 +348,6 @@ async function parseFormData(formData: FormData): Promise<ParsedFormData> {
       throw new Error("Invalid JSON in 'data' field");
     }
 
-    // Extract question image (if exists)
     let questionImageFile: File | null = null;
     const questionImage = formData.get("question_image");
 
@@ -457,10 +359,8 @@ async function parseFormData(formData: FormData): Promise<ParsedFormData> {
       questionImageFile = questionImage;
     }
 
-    // Extract option images (if exist)
     const optionImageFiles = new Map<number, File>();
 
-    // Parse all form entries to find option images
     for (const [key, value] of formData.entries()) {
       if (
         key.startsWith("option_image_") &&
@@ -487,23 +387,6 @@ async function parseFormData(formData: FormData): Promise<ParsedFormData> {
   }
 }
 
-/**
- * Process and upload files
- *
- * Validates and saves:
- * - Question image (if provided)
- * - Option images (if provided)
- *
- * On error, automatically cleans up any uploaded files.
- *
- * @param questionImageFile - Question image file (optional)
- * @param optionImageFiles - Map of option images by order_index
- * @param examType - Exam type for file organization
- * @param year - Year for file organization
- * @param subject - Subject for file organization
- * @returns Upload result with file paths
- * @throws Error if validation or upload fails
- */
 async function processFileUploads(
   questionImageFile: File | null,
   optionImageFiles: Map<number, File>,
@@ -516,11 +399,7 @@ async function processFileUploads(
   const optionImagePaths = new Map<number, string>();
 
   try {
-    // ============================================
-    // PROCESS QUESTION IMAGE
-    // ============================================
     if (questionImageFile) {
-      // Validate image
       const validation = await validateImageFile(questionImageFile);
       if (!validation.valid) {
         throw new Error(
@@ -528,7 +407,6 @@ async function processFileUploads(
         );
       }
 
-      // Save image
       const saveResult = await saveUploadedFile(
         questionImageFile,
         examType,
@@ -546,11 +424,7 @@ async function processFileUploads(
       uploadedFiles.push(saveResult.filePath!);
     }
 
-    // ============================================
-    // PROCESS OPTION IMAGES
-    // ============================================
     for (const [orderIndex, optionImageFile] of optionImageFiles.entries()) {
-      // Validate image
       const validation = await validateImageFile(optionImageFile);
       if (!validation.valid) {
         throw new Error(
@@ -558,7 +432,6 @@ async function processFileUploads(
         );
       }
 
-      // Save image
       const saveResult = await saveUploadedFile(
         optionImageFile,
         examType,
@@ -582,7 +455,6 @@ async function processFileUploads(
       uploadedFiles,
     };
   } catch (error) {
-    // Cleanup uploaded files on error
     if (uploadedFiles.length > 0) {
       await deleteFiles(uploadedFiles);
     }
@@ -597,26 +469,17 @@ async function saveQuestionToDatabase(
   userId: string
 ) {
   try {
-    // Import encryption utility
     const { encrypt } = await import("@/lib/utils/encryption");
 
-    // ============================================
-    // ENCRYPT SENSITIVE DATA
-    // ============================================
-
-    // Encrypt question text (REQUIRED)
     const encryptedQuestionText = encrypt(validatedData.question_text);
 
-    // Encrypt answer explanation (OPTIONAL)
     const encryptedExplanation = validatedData.answer_explanation
       ? encrypt(validatedData.answer_explanation)
       : null;
 
-    // Encrypt each option text
     const encryptedOptions = validatedData.options.map((opt) => {
       const encryptedText = encrypt(opt.option_text);
       return {
-        // Store encrypted data as JSON string in optionText field
         optionText: JSON.stringify({
           ciphertext: encryptedText.ciphertext,
           iv: encryptedText.iv,
@@ -629,14 +492,8 @@ async function saveQuestionToDatabase(
       };
     });
 
-    // ============================================
-    // SAVE TO DATABASE (ENCRYPTED JSON IN EXISTING FIELDS)
-    // ============================================
-
-    // Prisma's nested create is already transactional
     const question = await prisma.question.create({
       data: {
-        // Unencrypted metadata (for querying)
         examType: validatedData.exam_type,
         year: validatedData.year,
         subject: validatedData.subject,
@@ -648,16 +505,12 @@ async function saveQuestionToDatabase(
         timeLimit: validatedData.time_limit || null,
         language: validatedData.language,
         createdBy: userId,
-
-        // Store encrypted question text as JSON string
         questionText: JSON.stringify({
           ciphertext: encryptedQuestionText.ciphertext,
           iv: encryptedQuestionText.iv,
           tag: encryptedQuestionText.tag,
           salt: encryptedQuestionText.salt,
         }),
-
-        // Store encrypted answer explanation as JSON string (nullable)
         answerExplanation: encryptedExplanation
           ? JSON.stringify({
               ciphertext: encryptedExplanation.ciphertext,
@@ -666,8 +519,6 @@ async function saveQuestionToDatabase(
               salt: encryptedExplanation.salt,
             })
           : null,
-
-        // Create nested options with encrypted text as JSON
         options: {
           create: encryptedOptions,
         },
@@ -688,22 +539,6 @@ async function saveQuestionToDatabase(
   }
 }
 
-/**
- * Log question upload audit entry
- *
- * Logs upload attempts (success and failure) for security auditing.
- * Currently logs to console, can be extended to database or external service.
- *
- * @param context - User context
- * @param questionId - Created question ID (if successful)
- * @param examType - Exam type
- * @param year - Year
- * @param subject - Subject
- * @param hasQuestionImage - Whether question image was uploaded
- * @param optionImagesCount - Number of option images uploaded
- * @param success - Whether upload was successful
- * @param errorMessage - Error message (if failed)
- */
 async function logQuestionUpload(
   context: UserContext,
   questionId: string | null,
@@ -742,16 +577,15 @@ async function logQuestionUpload(
       errorMessage,
     };
 
-    // Log to console (can be extended to database or external logging service)
     console.log("[AUDIT] Question Upload:", JSON.stringify(auditLog, null, 2));
-
-    // TODO: Optional - Save to database audit log table
-    // await prisma.auditLog.create({ data: auditLog });
   } catch (error) {
     console.error("Audit logging failed:", error);
-    // Don't throw - audit logging failure shouldn't fail the upload
   }
 }
+
+// ============================================
+// EXPORTED FUNCTIONS
+// ============================================
 
 export async function uploadQuestion(
   formData: FormData
@@ -765,9 +599,6 @@ export async function uploadQuestion(
   let optionImagesCount = 0;
 
   try {
-    // ============================================
-    // STEP 1: VALIDATE SESSION & CHECK PERMISSION (RBAC)
-    // ============================================
     try {
       userContext = await checkAuthorizationAndSession();
     } catch (error) {
@@ -786,9 +617,6 @@ export async function uploadQuestion(
       };
     }
 
-    // ============================================
-    // STEP 2: CHECK RATE LIMIT
-    // ============================================
     const rateLimitResult = await checkRateLimit(userContext.userId);
 
     if (!rateLimitResult.allowed) {
@@ -799,9 +627,6 @@ export async function uploadQuestion(
       };
     }
 
-    // ============================================
-    // STEP 3: PARSE FORMDATA
-    // ============================================
     let parsedData: ParsedFormData;
     try {
       parsedData = await parseFormData(formData);
@@ -814,9 +639,6 @@ export async function uploadQuestion(
       };
     }
 
-    // ============================================
-    // STEP 4: VALIDATE QUESTION DATA
-    // ============================================
     let validatedData: ReturnType<typeof validateQuestionUpload>;
     try {
       validatedData = validateQuestionUpload(parsedData.questionData);
@@ -836,16 +658,12 @@ export async function uploadQuestion(
       };
     }
 
-    // Extract metadata for audit logging
     examType = validatedData.exam_type;
     year = validatedData.year;
     subject = validatedData.subject;
     hasQuestionImage = parsedData.questionImageFile !== null;
     optionImagesCount = parsedData.optionImageFiles.size;
 
-    // ============================================
-    // STEP 5: PROCESS FILE UPLOADS
-    // ============================================
     let fileUploadResult: FileUploadResult;
     try {
       fileUploadResult = await processFileUploads(
@@ -864,9 +682,6 @@ export async function uploadQuestion(
       };
     }
 
-    // ============================================
-    // STEP 6: SAVE TO DATABASE
-    // ============================================
     let createdQuestion;
     try {
       createdQuestion = await saveQuestionToDatabase(
@@ -876,7 +691,6 @@ export async function uploadQuestion(
         userContext.userId
       );
     } catch (_error) {
-      // Cleanup uploaded files
       if (uploadedFiles.length > 0) {
         await deleteFiles(uploadedFiles);
       }
@@ -888,9 +702,6 @@ export async function uploadQuestion(
       };
     }
 
-    // ============================================
-    // STEP 7: LOG AUDIT ENTRY
-    // ============================================
     await logQuestionUpload(
       userContext,
       createdQuestion.id,
@@ -899,12 +710,9 @@ export async function uploadQuestion(
       subject,
       hasQuestionImage,
       optionImagesCount,
-      true // success
+      true
     );
 
-    // ============================================
-    // STEP 8: RETURN SUCCESS RESPONSE
-    // ============================================
     return {
       success: true,
       message: "Question uploaded successfully",
@@ -916,12 +724,10 @@ export async function uploadQuestion(
   } catch (error) {
     console.error("Unexpected error in uploadQuestion:", error);
 
-    // Cleanup uploaded files on unexpected error
     if (uploadedFiles.length > 0) {
       await deleteFiles(uploadedFiles);
     }
 
-    // Log failed attempt
     if (userContext) {
       await logQuestionUpload(
         userContext,
@@ -931,7 +737,7 @@ export async function uploadQuestion(
         subject,
         hasQuestionImage,
         optionImagesCount,
-        false, // failure
+        false,
         error instanceof Error ? error.message : "Unknown error"
       );
     }
@@ -948,7 +754,6 @@ export async function listQuestions(
   query?: QuestionListQuery & { search?: string }
 ): Promise<QuestionListResponse> {
   try {
-    // STEP 1: Verify authentication and permission
     const headersList = await headers();
     const session = await auth.api.getSession({
       headers: headersList,
@@ -962,7 +767,6 @@ export async function listQuestions(
       };
     }
 
-    // Check permission (admin or exam_manager can list questions)
     const canView = await hasPermission({ question: ["view"] });
 
     if (!canView) {
@@ -973,7 +777,6 @@ export async function listQuestions(
       };
     }
 
-    // STEP 2: Check rate limit (100 requests per minute)
     const rateLimitResult = await checkListRateLimit(session.user.id);
 
     if (!rateLimitResult.allowed) {
@@ -984,12 +787,10 @@ export async function listQuestions(
       };
     }
 
-    // STEP 3: Build WHERE clause with filters
     const where: Prisma.QuestionWhereInput = {
-      deletedAt: null, // Only show non-deleted questions
+      deletedAt: null,
     };
 
-    // Apply filters
     if (query?.exam_type) {
       where.examType = query.exam_type;
     }
@@ -1006,9 +807,6 @@ export async function listQuestions(
       where.questionType = query.question_type;
     }
 
-    // Apply search (Note: searching encrypted data is limited to metadata)
-    // We cannot search inside encrypted questionText efficiently
-    // Instead, we search across metadata fields
     if (query?.search && query.search.trim()) {
       const searchTerm = query.search.trim();
       where.OR = [
@@ -1027,7 +825,6 @@ export async function listQuestions(
             contains: searchTerm,
           },
         },
-        // Search by year if it's a number
         ...(isNaN(Number(searchTerm))
           ? []
           : [
@@ -1038,18 +835,15 @@ export async function listQuestions(
       ];
     }
 
-    // STEP 4: Build ORDER BY clause
     const sortBy = query?.sortBy || "createdAt";
     const sortOrder = (query?.sortOrder || "desc") as Prisma.SortOrder;
     const orderBy: Prisma.QuestionOrderByWithRelationInput = {
       [sortBy]: sortOrder,
     };
 
-    // STEP 5: Calculate pagination
     const limit = query?.limit || 20;
     const offset = query?.offset || 0;
 
-    // STEP 6: Query questions with options
     const [questions, total] = await Promise.all([
       prisma.question.findMany({
         where,
@@ -1065,7 +859,6 @@ export async function listQuestions(
       prisma.question.count({ where }),
     ]);
 
-    // STEP 7: Decrypt questions
     const decryptedQuestions: QuestionDecrypted[] = questions
       .map((q) => {
         try {
@@ -1106,7 +899,6 @@ export async function listQuestions(
       })
       .filter((q): q is QuestionDecrypted => q !== null);
 
-    // STEP 8: Audit log
     console.log(
       `[AUDIT] User ${session.user.email} listed questions:`,
       JSON.stringify({
@@ -1117,7 +909,6 @@ export async function listQuestions(
       })
     );
 
-    // STEP 9: Return response
     return {
       success: true,
       data: {
@@ -1132,6 +923,492 @@ export async function listQuestions(
     return {
       success: false,
       message: "Failed to list questions",
+      code: "INTERNAL_ERROR",
+    };
+  }
+}
+
+export async function getQuestionById(questionId: string): Promise<{
+  success: boolean;
+  message: string;
+  code?: string;
+  data?: {
+    question: {
+      id: string;
+      examType: string;
+      year: number;
+      subject: string;
+      questionType: string;
+      questionText: string;
+      questionImage: string | null;
+      questionPoint: number;
+      answerExplanation: string | null;
+      difficultyLevel: string;
+      tags: string[];
+      timeLimit: number | null;
+      language: string;
+      createdBy: string;
+      createdAt: Date;
+      updatedAt: Date;
+      deletedAt: Date | null;
+      options: {
+        id: string;
+        questionId: string;
+        optionText: string;
+        optionImage: string | null;
+        isCorrect: boolean;
+        orderIndex: number;
+      }[];
+    };
+  };
+}> {
+  try {
+    const headersList = await headers();
+    const session = await auth.api.getSession({
+      headers: headersList,
+    });
+
+    if (!session) {
+      return {
+        success: false,
+        message: "Authentication required",
+        code: "UNAUTHORIZED",
+      };
+    }
+
+    const canView = await hasPermission({ question: ["view", "edit"] });
+
+    if (!canView) {
+      return {
+        success: false,
+        message: "You don't have permission to view this question",
+        code: "FORBIDDEN",
+      };
+    }
+
+    const question = await prisma.question.findUnique({
+      where: {
+        id: questionId,
+        deletedAt: null,
+      },
+      include: {
+        options: {
+          orderBy: { orderIndex: "asc" },
+        },
+      },
+    });
+
+    if (!question) {
+      return {
+        success: false,
+        message: "Question not found",
+        code: "QUESTION_NOT_FOUND",
+      };
+    }
+
+    let decrypted;
+    try {
+      decrypted = decryptQuestion(question);
+    } catch (error) {
+      console.error(`Failed to decrypt question ${questionId}:`, error);
+      return {
+        success: false,
+        message: "Failed to decrypt question data",
+        code: "DECRYPTION_ERROR",
+      };
+    }
+
+    const questionData = {
+      id: decrypted.id,
+      examType: decrypted.examType,
+      year: decrypted.year,
+      subject: decrypted.subject,
+      questionType: decrypted.questionType,
+      questionText: decrypted.questionText,
+      questionImage: decrypted.questionImage,
+      questionPoint: decrypted.questionPoint,
+      answerExplanation: decrypted.answerExplanation,
+      difficultyLevel: decrypted.difficultyLevel,
+      tags: Array.isArray(decrypted.tags)
+        ? decrypted.tags
+        : JSON.parse(decrypted.tags as string),
+      timeLimit: decrypted.timeLimit,
+      language: decrypted.language,
+      createdBy: decrypted.createdBy,
+      createdAt: decrypted.createdAt,
+      updatedAt: decrypted.updatedAt,
+      deletedAt: decrypted.deletedAt,
+      options: decrypted.options.map((opt) => ({
+        id: opt.id,
+        questionId: opt.questionId,
+        optionText: opt.optionText,
+        optionImage: opt.optionImage,
+        isCorrect: opt.isCorrect,
+        orderIndex: opt.orderIndex,
+      })),
+    };
+
+    console.log(
+      `[AUDIT] User ${session.user.email} viewed question:`,
+      JSON.stringify({
+        questionId: question.id,
+        examType: question.examType,
+        subject: question.subject,
+        year: question.year,
+      })
+    );
+
+    return {
+      success: true,
+      message: "Question retrieved successfully",
+      data: { question: questionData },
+    };
+  } catch (error) {
+    console.error("Get question by ID error:", error);
+    return {
+      success: false,
+      message: "Failed to retrieve question",
+      code: "INTERNAL_ERROR",
+    };
+  }
+}
+
+export async function updateQuestion(
+  questionId: string,
+  formData: FormData
+): Promise<QuestionUploadResponse> {
+  const uploadedFiles: string[] = [];
+  let userContext: UserContext | null = null;
+  let examType = "";
+  let year = 0;
+  let subject = "";
+  let hasQuestionImage = false;
+  let optionImagesCount = 0;
+
+  try {
+    try {
+      const headersList = await headers();
+      const session = await auth.api.getSession({
+        headers: headersList,
+      });
+
+      if (!session) {
+        return {
+          success: false,
+          message: "Authentication required. Please sign in.",
+          code: "NO_SESSION",
+        };
+      }
+
+      const canEdit = await hasPermission({ question: ["edit"] });
+
+      if (!canEdit) {
+        return {
+          success: false,
+          message: "You don't have permission to edit questions.",
+          code: "FORBIDDEN",
+        };
+      }
+
+      const user = await prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          banned: true,
+        },
+      });
+
+      if (!user) {
+        return {
+          success: false,
+          message: "User account not found.",
+          code: "USER_NOT_FOUND",
+        };
+      }
+
+      if (user.banned) {
+        return {
+          success: false,
+          message: "Your account has been banned.",
+          code: "USER_BANNED",
+        };
+      }
+
+      userContext = {
+        userId: user.id,
+        userEmail: user.email,
+        userRole: user.role || "user",
+        userName: user.name,
+      };
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("{")) {
+        const { message } = JSON.parse(error.message);
+        return {
+          success: false,
+          message,
+          code: "AUTH_ERROR",
+        };
+      }
+      return {
+        success: false,
+        message: "Authentication failed",
+        code: "AUTH_ERROR",
+      };
+    }
+
+    const existingQuestion = await prisma.question.findUnique({
+      where: { id: questionId, deletedAt: null },
+      include: { options: true },
+    });
+
+    if (!existingQuestion) {
+      return {
+        success: false,
+        message: "Question not found",
+        code: "QUESTION_NOT_FOUND",
+      };
+    }
+
+    const rateLimitResult = await checkRateLimit(userContext.userId);
+
+    if (!rateLimitResult.allowed) {
+      return {
+        success: false,
+        message: `Rate limit exceeded. Please try again in ${rateLimitResult.retryAfter} seconds.`,
+        code: "RATE_LIMIT_EXCEEDED",
+      };
+    }
+
+    let parsedData: ParsedFormData;
+    try {
+      parsedData = await parseFormData(formData);
+    } catch (error) {
+      return {
+        success: false,
+        message:
+          error instanceof Error ? error.message : "Failed to parse form data",
+        code: "INVALID_REQUEST",
+      };
+    }
+
+    let validatedData: ReturnType<typeof validateQuestionUpload>;
+    try {
+      validatedData = validateQuestionUpload(parsedData.questionData);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return {
+          success: false,
+          message: "Validation failed",
+          code: "VALIDATION_ERROR",
+          errors: formatValidationErrors(error),
+        };
+      }
+      return {
+        success: false,
+        message: "Invalid question data",
+        code: "VALIDATION_ERROR",
+      };
+    }
+
+    examType = validatedData.exam_type;
+    year = validatedData.year;
+    subject = validatedData.subject;
+    hasQuestionImage = parsedData.questionImageFile !== null;
+    optionImagesCount = parsedData.optionImageFiles.size;
+
+    let fileUploadResult: FileUploadResult = {
+      questionImagePath: existingQuestion.questionImage,
+      optionImagePaths: new Map(),
+      uploadedFiles: [],
+    };
+
+    const existingOptionImages = new Map<number, string>();
+    existingQuestion.options.forEach((opt) => {
+      if (opt.optionImage) {
+        existingOptionImages.set(opt.orderIndex, opt.optionImage);
+      }
+    });
+
+    try {
+      if (
+        parsedData.questionImageFile ||
+        parsedData.optionImageFiles.size > 0
+      ) {
+        fileUploadResult = await processFileUploads(
+          parsedData.questionImageFile,
+          parsedData.optionImageFiles,
+          validatedData.exam_type,
+          validatedData.year,
+          validatedData.subject
+        );
+        uploadedFiles.push(...fileUploadResult.uploadedFiles);
+
+        existingQuestion.options.forEach((opt) => {
+          if (
+            opt.optionImage &&
+            !fileUploadResult.optionImagePaths.has(opt.orderIndex)
+          ) {
+            fileUploadResult.optionImagePaths.set(
+              opt.orderIndex,
+              opt.optionImage
+            );
+          }
+        });
+      } else {
+        fileUploadResult.optionImagePaths = existingOptionImages;
+      }
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : "File upload failed",
+        code: "UPLOAD_FAILED",
+      };
+    }
+
+    let updatedQuestion;
+    try {
+      updatedQuestion = await prisma.$transaction(async (tx) => {
+        const { encrypt } = await import("@/lib/utils/encryption");
+
+        const encryptedQuestionText = encrypt(validatedData.question_text);
+        const encryptedExplanation = validatedData.answer_explanation
+          ? encrypt(validatedData.answer_explanation)
+          : null;
+
+        const encryptedOptions = validatedData.options.map((opt) => {
+          const encryptedText = encrypt(opt.option_text);
+          return {
+            optionText: JSON.stringify({
+              ciphertext: encryptedText.ciphertext,
+              iv: encryptedText.iv,
+              tag: encryptedText.tag,
+              salt: encryptedText.salt,
+            }),
+            optionImage:
+              fileUploadResult.optionImagePaths.get(opt.order_index) || null,
+            isCorrect: opt.is_correct,
+            orderIndex: opt.order_index,
+          };
+        });
+
+        const _updated = await tx.question.update({
+          where: { id: questionId },
+          data: {
+            examType: validatedData.exam_type,
+            year: validatedData.year,
+            subject: validatedData.subject,
+            questionType: validatedData.question_type,
+            questionImage:
+              fileUploadResult.questionImagePath ||
+              existingQuestion.questionImage,
+            questionPoint: validatedData.question_point,
+            difficultyLevel: validatedData.difficulty_level,
+            tags: validatedData.tags,
+            timeLimit: validatedData.time_limit || null,
+            language: validatedData.language,
+            questionText: JSON.stringify({
+              ciphertext: encryptedQuestionText.ciphertext,
+              iv: encryptedQuestionText.iv,
+              tag: encryptedQuestionText.tag,
+              salt: encryptedQuestionText.salt,
+            }),
+            answerExplanation: encryptedExplanation
+              ? JSON.stringify({
+                  ciphertext: encryptedExplanation.ciphertext,
+                  iv: encryptedExplanation.iv,
+                  tag: encryptedExplanation.tag,
+                  salt: encryptedExplanation.salt,
+                })
+              : null,
+          },
+          include: {
+            options: {
+              orderBy: { orderIndex: "asc" },
+            },
+          },
+        });
+
+        await tx.questionOption.deleteMany({
+          where: { questionId },
+        });
+
+        await tx.questionOption.createMany({
+          data: encryptedOptions.map((opt) => ({
+            questionId,
+            ...opt,
+          })),
+        });
+
+        return await tx.question.findUnique({
+          where: { id: questionId },
+          include: {
+            options: {
+              orderBy: { orderIndex: "asc" },
+            },
+          },
+        });
+      });
+    } catch (error) {
+      console.error("Database update failed:", error);
+
+      if (uploadedFiles.length > 0) {
+        await deleteFiles(uploadedFiles);
+      }
+
+      return {
+        success: false,
+        message: "Failed to update question in database",
+        code: "DATABASE_ERROR",
+      };
+    }
+
+    await logQuestionUpload(
+      userContext,
+      updatedQuestion!.id,
+      examType,
+      year,
+      subject,
+      hasQuestionImage,
+      optionImagesCount,
+      true,
+      undefined
+    );
+
+    return {
+      success: true,
+      message: "Question updated successfully",
+      data: {
+        questionId: updatedQuestion!.id,
+        question: updatedQuestion!,
+      },
+    };
+  } catch (error) {
+    console.error("Unexpected error in updateQuestion:", error);
+
+    if (uploadedFiles.length > 0) {
+      await deleteFiles(uploadedFiles);
+    }
+
+    if (userContext) {
+      await logQuestionUpload(
+        userContext,
+        null,
+        examType,
+        year,
+        subject,
+        hasQuestionImage,
+        optionImagesCount,
+        false,
+        error instanceof Error ? error.message : "Unknown error"
+      );
+    }
+
+    return {
+      success: false,
+      message: "An unexpected error occurred. Please try again.",
       code: "INTERNAL_ERROR",
     };
   }

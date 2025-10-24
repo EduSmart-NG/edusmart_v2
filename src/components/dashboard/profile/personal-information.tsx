@@ -30,8 +30,8 @@ export function PersonalInformation({ user }: PersonalInformationProps) {
     isPending: boolean;
   };
 
-  // Optimistic UI state
-  const [optimisticUser, updateOptimisticUser] = useOptimistic(
+  //  UI state
+  const [userDetail, updateUser] = useOptimistic(
     user,
     (currentUser, updates: Partial<UpdateUserProfileInput>) => ({
       ...currentUser,
@@ -40,13 +40,13 @@ export function PersonalInformation({ user }: PersonalInformationProps) {
   );
 
   // Split name into first and last name
-  const nameParts = optimisticUser.name.trim().split(/\s+/);
+  const nameParts = userDetail.name.trim().split(/\s+/);
   const firstName = nameParts[0] || "";
   const lastName = nameParts.slice(1).join(" ") || "";
 
   const handleSuccess = (updates: Partial<UpdateUserProfileInput>) => {
-    // Update optimistic state immediately
-    updateOptimisticUser(updates);
+    // Update  state immediately
+    updateUser(updates);
     setOpen(false);
     // Session will be automatically updated by Better Auth
   };
@@ -54,7 +54,7 @@ export function PersonalInformation({ user }: PersonalInformationProps) {
   return (
     <div className="rounded-lg border bg-white p-6">
       <div className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between">
-        <h3>Personal Information</h3>
+        <h4>Personal Information</h4>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button variant="outline" className="gap-2">
@@ -98,7 +98,7 @@ export function PersonalInformation({ user }: PersonalInformationProps) {
             Email address
           </label>
           <p className="mt-1 text-base font-medium text-gray-900">
-            {optimisticUser.email}
+            {userDetail.email}
           </p>
         </div>
 
@@ -106,7 +106,7 @@ export function PersonalInformation({ user }: PersonalInformationProps) {
         <div>
           <label className="text-sm font-medium text-gray-600">Phone</label>
           <p className="mt-1 text-base font-medium text-gray-900">
-            {formatPhoneNumber(optimisticUser.phoneNumber) || "Not provided"}
+            {formatPhoneNumber(userDetail.phoneNumber) || "Not provided"}
           </p>
         </div>
 
@@ -114,7 +114,7 @@ export function PersonalInformation({ user }: PersonalInformationProps) {
         <div>
           <label className="text-sm font-medium text-gray-600">State</label>
           <p className="mt-1 text-base font-medium text-gray-900">
-            {getDisplayValue(optimisticUser.state)}
+            {getDisplayValue(userDetail.state)}
           </p>
         </div>
 
@@ -122,7 +122,7 @@ export function PersonalInformation({ user }: PersonalInformationProps) {
         <div>
           <label className="text-sm font-medium text-gray-600">LGA</label>
           <p className="mt-1 text-base font-medium text-gray-900">
-            {getDisplayValue(optimisticUser.lga)}
+            {getDisplayValue(userDetail.lga)}
           </p>
         </div>
 
@@ -132,7 +132,7 @@ export function PersonalInformation({ user }: PersonalInformationProps) {
             Date of Birth
           </label>
           <p className="mt-1 text-base font-medium text-gray-900">
-            {formatDate(optimisticUser.dateOfBirth)}
+            {formatDate(userDetail.dateOfBirth)}
           </p>
         </div>
 
@@ -140,9 +140,9 @@ export function PersonalInformation({ user }: PersonalInformationProps) {
         <div>
           <label className="text-sm font-medium text-gray-600">Gender</label>
           <p className="mt-1 text-base font-medium text-gray-900">
-            {optimisticUser.gender
-              ? optimisticUser.gender.charAt(0) +
-                optimisticUser.gender.slice(1).toLowerCase()
+            {userDetail.gender
+              ? userDetail.gender.charAt(0) +
+                userDetail.gender.slice(1).toLowerCase()
               : "Not provided"}
           </p>
         </div>
@@ -152,7 +152,7 @@ export function PersonalInformation({ user }: PersonalInformationProps) {
             Street Address
           </label>
           <p className="mt-1 text-base font-medium text-gray-900">
-            {getDisplayValue(optimisticUser.address)}
+            {getDisplayValue(userDetail.address)}
           </p>
         </div>
 
@@ -162,7 +162,7 @@ export function PersonalInformation({ user }: PersonalInformationProps) {
             School Name
           </label>
           <p className="mt-1 text-base font-medium text-gray-900">
-            {getDisplayValue(optimisticUser.schoolName, "No school provided")}
+            {getDisplayValue(userDetail.schoolName, "No school provided")}
           </p>
         </div>
       </div>

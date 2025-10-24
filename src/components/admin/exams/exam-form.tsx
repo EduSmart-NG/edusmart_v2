@@ -1,6 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useTransition,
+} from "react";
 import { useRouter } from "next/navigation";
 import { useRecaptchaToken } from "@/hooks/use-recaptcha-token";
 import { Button } from "@/components/ui/button";
@@ -67,6 +73,32 @@ interface CreateExamFormProps {
   examId?: string;
 }
 
+interface FormData {
+  exam_type: string;
+  subject: string;
+  year: string;
+  title: string;
+  description: string;
+  duration: string;
+  passing_score: string;
+  max_attempts: string;
+  shuffle_questions: boolean;
+  randomize_options: boolean;
+  is_public: boolean;
+  is_free: boolean;
+  status: string;
+  category: string;
+  start_date: string;
+  end_date: string;
+}
+
+interface QuestionFilters {
+  exam_type: string;
+  year: string;
+  subject: string;
+  difficulty_level: string;
+}
+
 // ============================================
 // COMPONENT
 // ============================================
@@ -77,6 +109,7 @@ export default function CreateExamForm({
   examId,
 }: CreateExamFormProps) {
   const router = useRouter();
+  const [isPending, startTransition] = useTransition();
   const [isLoading, setIsLoading] = useState(false);
   const [showQuestionSearch, setShowQuestionSearch] = useState(false);
   const [isLoadingQuestions, setIsLoadingQuestions] = useState(false);
@@ -88,7 +121,7 @@ export default function CreateExamForm({
     error: recaptchaError,
   } = useRecaptchaToken();
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<FormData>(() => ({
     exam_type: initialData.exam_type || "",
     subject: initialData.subject || "",
     year: initialData.year || "",
@@ -105,9 +138,9 @@ export default function CreateExamForm({
     category: initialData.category || "",
     start_date: initialData.start_date || "",
     end_date: initialData.end_date || "",
-  });
+  }));
 
-  const [questionFilters, setQuestionFilters] = useState({
+  const [questionFilters, setQuestionFilters] = useState<QuestionFilters>({
     exam_type: "",
     year: "",
     subject: "",
@@ -130,10 +163,21 @@ export default function CreateExamForm({
   const [startDateOpen, setStartDateOpen] = useState(false);
   const [endDateOpen, setEndDateOpen] = useState(false);
 
-  // Memoize the total points calculation
+  // Memoize total points and check if all available questions are selected
   const totalPoints = useMemo(() => {
     return selectedQuestions.reduce((sum, q) => sum + q.questionPoint, 0);
   }, [selectedQuestions]);
+
+  const selectedQuestionIds = useMemo(() => {
+    return new Set(selectedQuestions.map((q) => q.id));
+  }, [selectedQuestions]);
+
+  const allQuestionsSelected = useMemo(() => {
+    return (
+      availableQuestions.length > 0 &&
+      availableQuestions.every((q) => selectedQuestionIds.has(q.id))
+    );
+  }, [availableQuestions, selectedQuestionIds]);
 
   // Memoized fetch questions function
   const fetchQuestions = useCallback(async () => {
@@ -168,34 +212,34 @@ export default function CreateExamForm({
     }
   }, [questionFilters]);
 
-  // Memoized handlers
+  // Optimized handlers with useCallback
   const handleInputChange = useCallback(
-    (field: string, value: string | boolean) => {
+    (field: keyof FormData, value: string | boolean) => {
       setFormData((prev) => ({ ...prev, [field]: value }));
-      setErrors((prev) => {
-        if (prev[field]) {
+      if (errors[field]) {
+        setErrors((prev) => {
           const newErrors = { ...prev };
           delete newErrors[field];
           return newErrors;
-        }
-        return prev;
-      });
+        });
+      }
+    },
+    [errors]
+  );
+
+  const handleFilterChange = useCallback(
+    (field: keyof QuestionFilters, value: string) => {
+      setQuestionFilters((prev) => ({ ...prev, [field]: value }));
     },
     []
   );
 
-  const handleFilterChange = useCallback((field: string, value: string) => {
-    setQuestionFilters((prev) => ({ ...prev, [field]: value }));
-  }, []);
-
   const toggleQuestionSelection = useCallback((question: QuestionDecrypted) => {
     setSelectedQuestions((prev) => {
       const isSelected = prev.some((q) => q.id === question.id);
-      if (isSelected) {
-        return prev.filter((q) => q.id !== question.id);
-      } else {
-        return [...prev, question];
-      }
+      return isSelected
+        ? prev.filter((q) => q.id !== question.id)
+        : [...prev, question];
     });
   }, []);
 
@@ -203,11 +247,28 @@ export default function CreateExamForm({
     setSelectedQuestions((prev) => prev.filter((q) => q.id !== questionId));
   }, []);
 
+  // Fixed select all/unselect all logic
+  const selectAllQuestions = useCallback(() => {
+    setSelectedQuestions((prev) => {
+      const existingIds = new Set(prev.map((q) => q.id));
+      const newQuestions = availableQuestions.filter(
+        (q) => !existingIds.has(q.id)
+      );
+      return [...prev, ...newQuestions];
+    });
+  }, [availableQuestions]);
+
+  const unselectAllQuestions = useCallback(() => {
+    setSelectedQuestions((prev) => {
+      const availableIds = new Set(availableQuestions.map((q) => q.id));
+      return prev.filter((q) => !availableIds.has(q.id));
+    });
+  }, [availableQuestions]);
+
   const handleStartDateSelect = useCallback((date: Date | undefined) => {
     if (date) {
       setStartDate(date);
-      const formattedDate = date.toISOString();
-      setFormData((prev) => ({ ...prev, start_date: formattedDate }));
+      setFormData((prev) => ({ ...prev, start_date: date.toISOString() }));
       setStartDateOpen(false);
     }
   }, []);
@@ -215,8 +276,7 @@ export default function CreateExamForm({
   const handleEndDateSelect = useCallback((date: Date | undefined) => {
     if (date) {
       setEndDate(date);
-      const formattedDate = date.toISOString();
-      setFormData((prev) => ({ ...prev, end_date: formattedDate }));
+      setFormData((prev) => ({ ...prev, end_date: date.toISOString() }));
       setEndDateOpen(false);
     }
   }, []);
@@ -239,39 +299,8 @@ export default function CreateExamForm({
     return Object.keys(newErrors).length === 0;
   }, [formData, selectedQuestions.length]);
 
-  // const resetForm = useCallback(() => {
-  //   setFormData({
-  //     exam_type: initialData.exam_type || "",
-  //     subject: initialData.subject || "",
-  //     year: initialData.year || "",
-  //     title: initialData.title || "",
-  //     description: initialData.description || "",
-  //     duration: initialData.duration || "",
-  //     passing_score: initialData.passing_score || "",
-  //     max_attempts: initialData.max_attempts || "",
-  //     shuffle_questions: initialData.shuffle_questions || false,
-  //     randomize_options: initialData.randomize_options || false,
-  //     is_public: initialData.is_public || false,
-  //     is_free: initialData.is_free || false,
-  //     status: initialData.status || "draft",
-  //     category: initialData.category || "",
-  //     start_date: initialData.start_date || "",
-  //     end_date: initialData.end_date || "",
-  //   });
-
-  //   setSelectedQuestions(initialData.questions || []);
-  //   setStartDate(
-  //     initialData.start_date ? new Date(initialData.start_date) : undefined
-  //   );
-  //   setEndDate(
-  //     initialData.end_date ? new Date(initialData.end_date) : undefined
-  //   );
-  //   setErrors({});
-  // }, [initialData]);
-
   const handleSubmit = useCallback(
     async (addAnother: boolean = false) => {
-      // Clear previous errors
       setErrors({});
 
       if (!validateForm()) {
@@ -282,7 +311,6 @@ export default function CreateExamForm({
       setIsLoading(true);
 
       try {
-        // Generate reCAPTCHA token
         const action = isEditing ? "exam_update" : "exam_create";
         const recaptchaToken = await generateToken(action);
 
@@ -294,36 +322,15 @@ export default function CreateExamForm({
           return;
         }
 
-        // Create FormData
         const formDataToSend = new FormData();
-        formDataToSend.append("exam_type", formData.exam_type);
-        formDataToSend.append("subject", formData.subject);
-        formDataToSend.append("year", formData.year);
-        formDataToSend.append("title", formData.title);
-        formDataToSend.append("description", formData.description || "");
-        formDataToSend.append("duration", formData.duration);
-        formDataToSend.append("passing_score", formData.passing_score || "");
-        formDataToSend.append("max_attempts", formData.max_attempts || "");
-        formDataToSend.append(
-          "shuffle_questions",
-          String(formData.shuffle_questions)
-        );
-        formDataToSend.append(
-          "randomize_options",
-          String(formData.randomize_options)
-        );
-        formDataToSend.append("is_public", String(formData.is_public));
-        formDataToSend.append("is_free", String(formData.is_free));
-        formDataToSend.append("status", formData.status);
-        formDataToSend.append("category", formData.category || "");
-        formDataToSend.append("start_date", formData.start_date || "");
-        formDataToSend.append("end_date", formData.end_date || "");
+        Object.entries(formData).forEach(([key, value]) => {
+          formDataToSend.append(key, String(value));
+        });
         formDataToSend.append(
           "question_ids",
           JSON.stringify(selectedQuestions.map((q) => q.id))
         );
 
-        // Call appropriate server action
         const result =
           isEditing && examId
             ? await updateExam(examId, formDataToSend, recaptchaToken)
@@ -335,16 +342,14 @@ export default function CreateExamForm({
             duration: 5000,
           });
 
-          // Handle navigation based on button clicked
-          if (addAnother) {
-            // "Save and Add Another" - Go to new exam form
-            router.push("/cp/admin-dashboard/exams/new");
-          } else {
-            // "Save and Exit" - Go back to exam listing
-            router.push("/cp/admin-dashboard/exams/");
-          }
+          startTransition(() => {
+            if (addAnother) {
+              router.push("/cp/admin-dashboard/exams/new");
+            } else {
+              router.push("/cp/admin-dashboard/exams/");
+            }
+          });
         } else {
-          // Show detailed error message
           toast.error(result.message, {
             description: result.errors
               ? Object.entries(result.errors)
@@ -354,10 +359,8 @@ export default function CreateExamForm({
             duration: 5000,
           });
 
-          // Set field-specific errors
           if (result.errors) {
             setErrors(result.errors);
-            console.error("Form validation errors:", result.errors);
           }
         }
       } catch (error) {
@@ -383,22 +386,14 @@ export default function CreateExamForm({
     setShowQuestionSearch((prev) => !prev);
   }, []);
 
-  // Update dates when initialData changes
-  useEffect(() => {
-    if (initialData.start_date) {
-      setStartDate(new Date(initialData.start_date));
-    }
-    if (initialData.end_date) {
-      setEndDate(new Date(initialData.end_date));
-    }
-  }, [initialData.start_date, initialData.end_date]);
-
   // Fetch questions when filters change
   useEffect(() => {
     if (showQuestionSearch) {
       fetchQuestions();
     }
   }, [questionFilters, showQuestionSearch, fetchQuestions]);
+
+  const isSubmitting = isLoading || isRecaptchaLoading || isPending;
 
   return (
     <div>
@@ -423,7 +418,7 @@ export default function CreateExamForm({
                   onValueChange={(value) =>
                     handleInputChange("exam_type", value)
                   }
-                  disabled={isLoading}
+                  disabled={isSubmitting}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select exam type" />
@@ -448,7 +443,7 @@ export default function CreateExamForm({
                 <Select
                   value={formData.subject}
                   onValueChange={(value) => handleInputChange("subject", value)}
-                  disabled={isLoading}
+                  disabled={isSubmitting}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select subject" />
@@ -473,7 +468,7 @@ export default function CreateExamForm({
                 <Select
                   value={formData.year}
                   onValueChange={(value) => handleInputChange("year", value)}
-                  disabled={isLoading}
+                  disabled={isSubmitting}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select year" />
@@ -502,7 +497,7 @@ export default function CreateExamForm({
                 placeholder="e.g., WAEC Mathematics 2024 Mock Exam"
                 value={formData.title}
                 onChange={(e) => handleInputChange("title", e.target.value)}
-                disabled={isLoading}
+                disabled={isSubmitting}
               />
               {errors.title && (
                 <p className="text-xs text-red-500">{errors.title}</p>
@@ -518,7 +513,7 @@ export default function CreateExamForm({
                 onChange={(e) =>
                   handleInputChange("description", e.target.value)
                 }
-                disabled={isLoading}
+                disabled={isSubmitting}
                 rows={3}
               />
             </div>
@@ -546,7 +541,7 @@ export default function CreateExamForm({
                   onChange={(e) =>
                     handleInputChange("duration", e.target.value)
                   }
-                  disabled={isLoading}
+                  disabled={isSubmitting}
                 />
                 {errors.duration && (
                   <p className="text-xs text-red-500">{errors.duration}</p>
@@ -563,7 +558,7 @@ export default function CreateExamForm({
                   onChange={(e) =>
                     handleInputChange("passing_score", e.target.value)
                   }
-                  disabled={isLoading}
+                  disabled={isSubmitting}
                 />
               </div>
 
@@ -577,7 +572,7 @@ export default function CreateExamForm({
                   onChange={(e) =>
                     handleInputChange("max_attempts", e.target.value)
                   }
-                  disabled={isLoading}
+                  disabled={isSubmitting}
                 />
               </div>
             </div>
@@ -590,7 +585,7 @@ export default function CreateExamForm({
                 <Select
                   value={formData.status}
                   onValueChange={(value) => handleInputChange("status", value)}
-                  disabled={isLoading}
+                  disabled={isSubmitting}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select status" />
@@ -615,7 +610,7 @@ export default function CreateExamForm({
                   onValueChange={(value) =>
                     handleInputChange("category", value)
                   }
-                  disabled={isLoading}
+                  disabled={isSubmitting}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select category" />
@@ -641,7 +636,7 @@ export default function CreateExamForm({
                       id="start_date"
                       className="w-full justify-between font-normal bg-transparent"
                       type="button"
-                      disabled={isLoading}
+                      disabled={isSubmitting}
                     >
                       {startDate
                         ? startDate.toLocaleDateString()
@@ -660,7 +655,7 @@ export default function CreateExamForm({
                       captionLayout="dropdown"
                       fromYear={2020}
                       toYear={2030}
-                      defaultMonth={new Date()}
+                      defaultMonth={startDate || new Date()}
                     />
                   </PopoverContent>
                 </Popover>
@@ -675,7 +670,7 @@ export default function CreateExamForm({
                       id="end_date"
                       className="w-full justify-between font-normal bg-transparent"
                       type="button"
-                      disabled={isLoading}
+                      disabled={isSubmitting}
                     >
                       {endDate
                         ? endDate.toLocaleDateString()
@@ -715,7 +710,7 @@ export default function CreateExamForm({
                   onCheckedChange={(checked) =>
                     handleInputChange("shuffle_questions", checked)
                   }
-                  disabled={isLoading}
+                  disabled={isSubmitting}
                 />
               </div>
 
@@ -729,7 +724,7 @@ export default function CreateExamForm({
                   onCheckedChange={(checked) =>
                     handleInputChange("randomize_options", checked)
                   }
-                  disabled={isLoading}
+                  disabled={isSubmitting}
                 />
               </div>
 
@@ -743,7 +738,7 @@ export default function CreateExamForm({
                   onCheckedChange={(checked) =>
                     handleInputChange("is_public", checked)
                   }
-                  disabled={isLoading}
+                  disabled={isSubmitting}
                 />
               </div>
 
@@ -757,7 +752,7 @@ export default function CreateExamForm({
                   onCheckedChange={(checked) =>
                     handleInputChange("is_free", checked)
                   }
-                  disabled={isLoading}
+                  disabled={isSubmitting}
                 />
               </div>
             </div>
@@ -782,7 +777,7 @@ export default function CreateExamForm({
                 type="button"
                 variant="outline"
                 onClick={toggleQuestionSearch}
-                disabled={isLoading}
+                disabled={isSubmitting}
                 className="w-full md:w-fit"
               >
                 <Search className="h-4 w-4 mr-2" />
@@ -935,6 +930,47 @@ export default function CreateExamForm({
                     </div>
                   </div>
 
+                  {/* Select All / Unselect All Buttons */}
+                  {availableQuestions.length > 0 && (
+                    <div className="pt-2 border-t flex gap-2">
+                      {selectedQuestions.length < availableQuestions.length && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={selectAllQuestions}
+                          disabled={
+                            isSubmitting ||
+                            isLoadingQuestions ||
+                            allQuestionsSelected
+                          }
+                          className="text-green-600 border-green-600 hover:bg-green-50 disabled:opacity-50"
+                        >
+                          Select All ({availableQuestions.length})
+                        </Button>
+                      )}
+
+                      {selectedQuestions.length > 1 && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={unselectAllQuestions}
+                          disabled={
+                            isSubmitting ||
+                            isLoadingQuestions ||
+                            !selectedQuestions.some((q) =>
+                              availableQuestions.some((aq) => aq.id === q.id)
+                            )
+                          }
+                          className="text-red-600 border-red-600 hover:bg-red-50 disabled:opacity-50"
+                        >
+                          Unselect All
+                        </Button>
+                      )}
+                    </div>
+                  )}
+
                   {isLoadingQuestions ? (
                     <div className="flex items-center justify-center py-8">
                       <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -947,8 +983,8 @@ export default function CreateExamForm({
                         </p>
                       ) : (
                         availableQuestions.map((question) => {
-                          const isSelected = selectedQuestions.some(
-                            (q) => q.id === question.id
+                          const isSelected = selectedQuestionIds.has(
+                            question.id
                           );
                           return (
                             <div
@@ -1046,7 +1082,7 @@ export default function CreateExamForm({
                           variant="ghost"
                           size="sm"
                           onClick={() => removeQuestion(question.id)}
-                          disabled={isLoading}
+                          disabled={isSubmitting}
                         >
                           <X className="h-4 w-4 text-red-500" />
                         </Button>
@@ -1057,36 +1093,37 @@ export default function CreateExamForm({
               </div>
             )}
           </div>
+
+          {/* Form Actions */}
           <div className="flex items-center justify-between gap-4">
             <Button
               type="button"
               variant="outline"
               onClick={() => router.back()}
-              disabled={isLoading}
+              disabled={isSubmitting}
             >
               Cancel
             </Button>
 
-            {/* Submit Buttons */}
             <div className="flex flex-col md:flex-row gap-3">
               <Button
                 variant="secondary"
                 onClick={() => handleSubmit(false)}
                 className="w-full md:w-fit"
-                disabled={isLoading || isRecaptchaLoading}
+                disabled={isSubmitting}
               >
-                {(isLoading || isRecaptchaLoading) && (
+                {isSubmitting && (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 )}
-                {isLoading || isRecaptchaLoading ? "Saving" : "Save and Exit"}
+                {isSubmitting ? "Saving..." : "Save and Exit"}
               </Button>
 
               <Button
                 onClick={() => handleSubmit(true)}
                 className="w-full md:w-fit"
-                disabled={isLoading || isRecaptchaLoading}
+                disabled={isSubmitting}
               >
-                {(isLoading || isRecaptchaLoading) && (
+                {isSubmitting && (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 )}
                 Save and Add Another
