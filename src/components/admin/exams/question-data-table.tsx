@@ -1,16 +1,11 @@
 "use client";
 
-/**
- * Questions Table Component - With Fixed Question Text Truncation
- */
-
 import * as React from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { format } from "date-fns";
 import {
   MoreHorizontal,
   FileQuestion,
-  Eye,
   Edit,
   Trash2,
   Copy,
@@ -45,6 +40,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { QuestionDecrypted } from "@/types/question-api";
+import Link from "next/link";
 
 interface QuestionsTableProps {
   questions: QuestionDecrypted[];
@@ -54,7 +50,6 @@ interface QuestionsTableProps {
   pageSize: number;
 }
 
-// Helper to truncate question text
 function truncateText(text: string, maxLength: number = 60): string {
   if (text.length <= maxLength) return text;
   return text.substring(0, maxLength).trim() + "...";
@@ -89,28 +84,22 @@ function RowActions({ question }: { question: QuestionDecrypted }) {
       <DropdownMenuContent align="end">
         <DropdownMenuLabel>Actions</DropdownMenuLabel>
         <DropdownMenuSeparator />
+
         <DropdownMenuItem
           onClick={() =>
             router.push(`/cp/admin-dashboard/questions/${question.id}`)
           }
-        >
-          <Eye className="mr-2 h-4 w-4" />
-          View Details
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() =>
-            router.push(`/cp/admin-dashboard/questions/${question.id}/edit`)
-          }
+          className="cursor-pointer"
         >
           <Edit className="mr-2 h-4 w-4" />
-          Edit Question
+          Edit
         </DropdownMenuItem>
-        <DropdownMenuItem>
+        <DropdownMenuItem className="cursor-pointer">
           <Copy className="mr-2 h-4 w-4" />
           Duplicate
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem className="text-destructive">
+        <DropdownMenuItem className="text-destructive cursor-pointer">
           <Trash2 className="mr-2 h-4 w-4" />
           Delete
         </DropdownMenuItem>
@@ -260,9 +249,12 @@ export function QuestionsTable({
                 <TableRow key={question.id}>
                   <TableCell className="w-[300px]">
                     <div className="max-w-[300px] overflow-hidden">
-                      <p className="text-sm font-medium truncate">
+                      <Link
+                        href={`/cp/admin-dashboard/questions/${question.id}`}
+                        className="text-sm font-medium truncate hover:underline"
+                      >
                         {truncateText(question.questionText, 60)}
-                      </p>
+                      </Link>
                     </div>
                   </TableCell>
 

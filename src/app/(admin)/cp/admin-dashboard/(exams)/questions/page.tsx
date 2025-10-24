@@ -28,7 +28,7 @@ import prisma from "@/lib/prisma";
 // ============================================
 
 export const metadata: Metadata = {
-  title: "Questions Management | Admin Dashboard",
+  title: "Questions",
   description: "Manage exam questions and question bank",
 };
 

@@ -26,12 +26,14 @@ import {
   YEARS,
 } from "@/lib/utils/exam";
 import { AddQuestionFormProps } from "@/types/question";
-import { uploadQuestion } from "@/lib/actions/question-upload";
+import { updateQuestion, uploadQuestion } from "@/lib/actions/question-upload";
 import type { QuestionUploadInput } from "@/lib/validations/question";
 
 export default function AddQuestionForm({
   initialData = {},
   onSubmit,
+  isEditing = false,
+  questionId,
 }: AddQuestionFormProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [questionImage, setQuestionImage] = useState<File | null>(null);
@@ -387,7 +389,7 @@ export default function AddQuestionForm({
           order_index: index,
           has_image: opt.option_image !== null || !!opt.option_image_preview,
         })),
-        has_question_image: questionImage !== null,
+        has_question_image: questionImage !== null || !!questionImagePreview,
       };
 
       // ============================================
@@ -398,12 +400,12 @@ export default function AddQuestionForm({
       // Add question data as JSON string
       formDataToSend.append("data", JSON.stringify(questionData));
 
-      // Add question image if exists
+      // Add question image if exists (new file)
       if (questionImage) {
         formDataToSend.append("question_image", questionImage);
       }
 
-      // Add option images if exist
+      // Add option images if exist (new files)
       options.forEach((option, index) => {
         if (option.option_image) {
           formDataToSend.append(`option_image_${index}`, option.option_image);
@@ -411,23 +413,30 @@ export default function AddQuestionForm({
       });
 
       // ============================================
-      // STEP 3: CALL SERVER ACTION
+      // STEP 3: CALL SERVER ACTION (CREATE OR UPDATE)
       // ============================================
-      const result = await uploadQuestion(formDataToSend);
+      const result =
+        isEditing && questionId
+          ? await updateQuestion(questionId, formDataToSend)
+          : await uploadQuestion(formDataToSend);
 
       // ============================================
       // STEP 4: HANDLE RESPONSE
       // ============================================
       if (result.success) {
         // Success!
-        toast.success("Question uploaded successfully!", {
-          description: `Question ID: ${result.data.questionId}`,
-          duration: 5000,
-        });
+        toast.success(
+          isEditing
+            ? "Question updated successfully!"
+            : "Question uploaded successfully!",
+          {
+            description: `Question ID: ${result.data?.questionId}`,
+            duration: 5000,
+          }
+        );
 
         // Call custom onSubmit if provided (for backward compatibility)
         if (onSubmit) {
-          // Convert to old format for legacy onSubmit handler
           const legacyQuestionData = {
             exam_type: formData.exam_type,
             year: parseInt(formData.year),
@@ -460,7 +469,6 @@ export default function AddQuestionForm({
             await onSubmit(legacyQuestionData, addAnother);
           } catch (error) {
             console.error("Legacy onSubmit handler error:", error);
-            // Don't fail the upload if legacy handler fails
           }
         }
 
@@ -470,13 +478,13 @@ export default function AddQuestionForm({
         }
       } else {
         // Error occurred
-        console.error("Upload failed:", result);
+        console.error(isEditing ? "Update failed:" : "Upload failed:", result);
 
         // Handle specific error codes
         switch (result.code) {
           case "NO_SESSION":
             toast.error("Authentication required", {
-              description: "Please sign in to upload questions.",
+              description: "Please sign in to continue.",
               duration: 5000,
             });
             break;
@@ -484,6 +492,13 @@ export default function AddQuestionForm({
           case "FORBIDDEN":
             toast.error("Access denied", {
               description: result.message,
+              duration: 5000,
+            });
+            break;
+
+          case "QUESTION_NOT_FOUND":
+            toast.error("Question not found", {
+              description: "The question you're trying to edit doesn't exist.",
               duration: 5000,
             });
             break;
@@ -501,11 +516,9 @@ export default function AddQuestionForm({
               duration: 5000,
             });
 
-            // Set field-level errors if available
             if (result.errors) {
               setErrors(result.errors);
 
-              // Scroll to first error
               const firstErrorField = Object.keys(result.errors)[0];
               const errorElement = document.getElementById(firstErrorField);
               if (errorElement) {
@@ -526,7 +539,7 @@ export default function AddQuestionForm({
 
           case "DATABASE_ERROR":
             toast.error("Database error", {
-              description: "Failed to save question. Please try again.",
+              description: `Failed to ${isEditing ? "update" : "save"} question. Please try again.`,
               duration: 5000,
             });
             break;
@@ -539,7 +552,7 @@ export default function AddQuestionForm({
             break;
 
           default:
-            toast.error("Upload failed", {
+            toast.error(isEditing ? "Update failed" : "Upload failed", {
               description: result.message || "An unexpected error occurred",
               duration: 5000,
             });
@@ -548,7 +561,7 @@ export default function AddQuestionForm({
     } catch (error) {
       console.error("Error submitting question:", error);
       toast.error("Unexpected error", {
-        description: "Failed to upload question. Please try again.",
+        description: `Failed to ${isEditing ? "update" : "upload"} question. Please try again.`,
         duration: 5000,
       });
     } finally {
@@ -1017,21 +1030,26 @@ export default function AddQuestionForm({
             >
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {isLoading
-                ? "Uploading Question..."
-                : initialData.question_image
+                ? isEditing
+                  ? "Updating Question..."
+                  : "Uploading Question..."
+                : isEditing
                   ? "Update Question"
                   : "Add Question"}
             </Button>
 
-            <Button
-              onClick={() => handleSubmit(true)}
-              variant="outline"
-              className="w-full md:w-fit"
-              disabled={isLoading}
-            >
-              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Save and Add Another
-            </Button>
+            {/* Only show "Save and Add Another" for create mode */}
+            {!isEditing && (
+              <Button
+                onClick={() => handleSubmit(true)}
+                variant="outline"
+                className="w-full md:w-fit"
+                disabled={isLoading}
+              >
+                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Save and Add Another
+              </Button>
+            )}
           </div>
         </div>
       </Card>

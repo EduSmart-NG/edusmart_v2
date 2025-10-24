@@ -71,6 +71,26 @@ export interface OptionFormState {
 
 // Props interface for the AddQuestionForm component
 export interface AddQuestionFormProps {
-  initialData?: InitialFormData;
-  onSubmit?: (data: QuestionFormData, addAnother: boolean) => Promise<void>;
+  initialData?: Partial<{
+    exam_type: string;
+    year: string;
+    subject: string;
+    question_type: string;
+    question_text: string;
+    question_image: string;
+    question_point: string;
+    answer_explanation: string;
+    difficulty_level: string;
+    tags: string;
+    time_limit: string;
+    options: {
+      option_text: string;
+      option_image: string;
+      is_correct: boolean;
+      order_index: number;
+    }[];
+  }>;
+  onSubmit?: (data: unknown, addAnother: boolean) => Promise<void>;
+  isEditing?: boolean;
+  questionId?: string;
 }
