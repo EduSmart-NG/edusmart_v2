@@ -198,28 +198,3 @@ export interface SubjectStats {
   avgQuestionsPerSubject: number;
   avgExamsPerSubject: number;
 }
-
-export type SubjectFormData = SubjectCreateInput;
-
-export interface InitialSubjectFormData {
-  name?: string;
-  code?: string;
-  description?: string;
-  isActive?: boolean;
-}
-
-export function subjectToFormData(subject: Subject): InitialSubjectFormData {
-  return {
-    name: subject.name,
-    code: subject.code || "",
-    description: subject.description || "",
-    isActive: subject.isActive,
-  };
-}
-
-export interface SubjectFormProps {
-  initialData?: InitialSubjectFormData;
-  onSubmit?: (data: SubjectFormData, addAnother: boolean) => Promise<void>;
-  isEditing?: boolean;
-  subjectId?: string;
-}
