@@ -28,7 +28,6 @@ import { defaultStatements } from "better-auth/plugins/admin/access";
  * - question: Question bank operations (custom)
  * - exam: Exam operations (custom)
  * - profile: User profile operations (custom)
- * - subject: Subject management operations (custom)
  */
 export const statement = {
   // Merge Better Auth's default admin statements
@@ -42,9 +41,6 @@ export const statement = {
 
   // Custom resource: Profile management
   profile: ["view", "update", "delete"] as const,
-
-  // Custom resource: Subject management
-  subject: ["create", "view", "edit", "delete", "list"] as const,
 } as const;
 
 // ============================================
@@ -84,7 +80,6 @@ export const admin = ac.newRole({
   question: ["upload", "view", "edit", "delete", "import", "export"],
   exam: ["take", "view-results", "create", "manage"],
   profile: ["view", "update", "delete"],
-  subject: ["create", "view", "edit", "delete", "list"],
 });
 
 /**
@@ -106,9 +101,6 @@ export const examManager = ac.newRole({
 
   // Regular user profile permissions
   profile: ["view", "update"],
-
-  // Can create and view subjects
-  subject: ["create", "view", "list"],
 });
 
 /**
@@ -130,9 +122,6 @@ export const user = ac.newRole({
 
   // Can view and update own profile
   profile: ["view", "update"],
-
-  // Can view and list subjects
-  subject: ["view", "list"],
 });
 
 // ============================================
