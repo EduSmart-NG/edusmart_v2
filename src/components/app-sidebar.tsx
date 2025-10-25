@@ -39,27 +39,27 @@ const data = {
   navMain: [
     {
       title: "Dashboard",
-      url: "/cp/admin-dashboard",
+      url: "#",
       icon: IconDashboard,
     },
     {
-      title: "Subjects",
-      url: "/cp/admin-dashboard/subjects",
+      title: "Lifecycle",
+      url: "#",
       icon: IconListDetails,
     },
     {
-      title: "Questions",
-      url: "/cp/admin-dashboard/questions",
+      title: "Analytics",
+      url: "#",
       icon: IconChartBar,
     },
     {
-      title: "Exams",
-      url: "/cp/admin-dashboard/exams",
+      title: "Projects",
+      url: "#",
       icon: IconFolder,
     },
     {
-      title: "Users",
-      url: "/cp/admin-dashboard/users",
+      title: "Team",
+      url: "#",
       icon: IconUsers,
     },
   ],

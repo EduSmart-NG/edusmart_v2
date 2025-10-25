@@ -212,10 +212,12 @@ export const subjectPlugin = (
             }
 
             // STEP 6: Check for duplicate subject name (case-insensitive)
-            // FIX: Remove 'mode: insensitive' - MySQL doesn't support mode filter
             const existingSubject = await prisma.subject.findFirst({
               where: {
-                name: validatedData.name,
+                name: {
+                  equals: validatedData.name,
+                  mode: "insensitive",
+                },
                 deletedAt: null,
               },
             });
@@ -261,7 +263,7 @@ export const subjectPlugin = (
             const userAgent = ctx.request.headers.get("user-agent") || null;
 
             console.log(
-              `[AUDIT] Subject Creation:`,
+              `[AUDIT] Subject Create:`,
               JSON.stringify(
                 {
                   timestamp: new Date().toISOString(),
@@ -270,6 +272,7 @@ export const subjectPlugin = (
                   userRole: user.role,
                   subjectId: subject.id,
                   subjectName: subject.name,
+                  subjectCode: subject.code,
                   ipAddress,
                   userAgent,
                 },
@@ -285,7 +288,7 @@ export const subjectPlugin = (
                 message: "Subject created successfully",
                 data: {
                   subjectId: subject.id,
-                  subject: subject,
+                  subject,
                 },
               },
               { status: 201 }
@@ -385,13 +388,6 @@ export const subjectPlugin = (
             }
 
             // STEP 4: Parse and validate query parameters
-            // FIX: Add null check for ctx.request
-            if (!ctx.request) {
-              throw new APIError("BAD_REQUEST", {
-                message: "Invalid request",
-              });
-            }
-
             const url = new URL(ctx.request.url);
             const queryParams = {
               isActive:
@@ -403,15 +399,17 @@ export const subjectPlugin = (
               search: url.searchParams.get("search") || undefined,
               limit: parseInt(url.searchParams.get("limit") || "50"),
               offset: parseInt(url.searchParams.get("offset") || "0"),
+              sortBy: url.searchParams.get("sortBy") || "name",
+              sortOrder: url.searchParams.get("sortOrder") || "asc",
             };
 
-            let validatedData: ReturnType<typeof validateSubjectList>;
+            let validatedParams: ReturnType<typeof validateSubjectList>;
             try {
-              validatedData = validateSubjectList(queryParams);
+              validatedParams = validateSubjectList(queryParams);
             } catch (error) {
               if (error instanceof ZodError) {
                 throw new APIError("BAD_REQUEST", {
-                  message: "Validation failed",
+                  message: "Invalid query parameters",
                   details: formatValidationErrors(error),
                 });
               }
@@ -419,42 +417,38 @@ export const subjectPlugin = (
             }
 
             // STEP 5: Build where clause
-            // FIX: Properly type the where clause
-            const whereClause: {
-              deletedAt: null;
-              isActive?: boolean;
-              OR?: Array<{
-                name?: { contains: string };
-                code?: { contains: string };
-              }>;
-            } = {
+            const where: Parameters<
+              typeof prisma.subject.findMany
+            >[0]["where"] = {
               deletedAt: null,
             };
 
-            if (validatedData.isActive !== undefined) {
-              whereClause.isActive = validatedData.isActive;
+            if (validatedParams.isActive !== undefined) {
+              where.isActive = validatedParams.isActive;
             }
 
-            if (validatedData.search) {
-              whereClause.OR = [
-                { name: { contains: validatedData.search } },
-                { code: { contains: validatedData.search } },
+            if (validatedParams.search) {
+              where.OR = [
+                {
+                  name: {
+                    contains: validatedParams.search,
+                    mode: "insensitive",
+                  },
+                },
+                {
+                  code: {
+                    contains: validatedParams.search,
+                    mode: "insensitive",
+                  },
+                },
               ];
             }
 
-            // STEP 6: Fetch subjects with aggregated stats
+            // STEP 6: Fetch subjects with counts
             const [subjects, total] = await Promise.all([
               prisma.subject.findMany({
-                where: whereClause,
-                select: {
-                  id: true,
-                  name: true,
-                  code: true,
-                  description: true,
-                  isActive: true,
-                  createdBy: true,
-                  createdAt: true,
-                  updatedAt: true,
+                where,
+                include: {
                   _count: {
                     select: {
                       questions: true,
@@ -462,36 +456,24 @@ export const subjectPlugin = (
                     },
                   },
                 },
-                orderBy: { name: "asc" },
-                take: validatedData.limit,
-                skip: validatedData.offset,
+                orderBy: {
+                  [validatedParams.sortBy]: validatedParams.sortOrder,
+                },
+                skip: validatedParams.offset,
+                take: validatedParams.limit,
               }),
-              prisma.subject.count({ where: whereClause }),
+              prisma.subject.count({ where }),
             ]);
 
-            // STEP 7: Transform results
-            const subjectsWithStats = subjects.map((subject) => ({
-              id: subject.id,
-              name: subject.name,
-              code: subject.code,
-              description: subject.description,
-              isActive: subject.isActive,
-              createdBy: subject.createdBy,
-              createdAt: subject.createdAt,
-              updatedAt: subject.updatedAt,
-              questionCount: subject._count.questions,
-              examCount: subject._count.exams,
-            }));
-
-            // STEP 8: Return success
+            // STEP 7: Return response
             return ctx.json({
               success: true,
               message: "Subjects retrieved successfully",
               data: {
-                subjects: subjectsWithStats,
+                subjects,
                 total,
-                limit: validatedData.limit,
-                offset: validatedData.offset,
+                limit: validatedParams.limit,
+                offset: validatedParams.offset,
               },
             });
           } catch (error) {
@@ -533,7 +515,7 @@ export const subjectPlugin = (
        * - API key (via custom header)
        *
        * Authorization:
-       * - subject:["update"] permission required (admin or exam_manager)
+       * - subject:["edit"] permission required (admin or exam_manager)
        */
       updateSubject: createAuthEndpoint(
         "/subject/update",
@@ -645,9 +627,12 @@ export const subjectPlugin = (
             ) {
               const duplicateName = await prisma.subject.findFirst({
                 where: {
-                  name: validatedData.name,
-                  deletedAt: null,
                   id: { not: subjectId },
+                  name: {
+                    equals: validatedData.name,
+                    mode: "insensitive",
+                  },
+                  deletedAt: null,
                 },
               });
 
@@ -665,9 +650,9 @@ export const subjectPlugin = (
             ) {
               const duplicateCode = await prisma.subject.findFirst({
                 where: {
+                  id: { not: subjectId },
                   code: validatedData.code,
                   deletedAt: null,
-                  id: { not: subjectId },
                 },
               });
 
