@@ -1,18 +1,3 @@
-/**
- * Subject Management Server Actions
- *
- * Secure server actions for subject CRUD operations.
- *
- * Security Features:
- * - Session validation via Better Auth
- * - Permission-based access control (RBAC)
- * - Input validation (Zod + sanitization)
- * - SQL injection prevention (Prisma parameterized queries)
- * - Audit logging
- *
- * @module lib/actions/subjects
- */
-
 "use server";
 
 import { auth } from "@/lib/auth";
@@ -34,6 +19,12 @@ import type {
 import { ZodError } from "zod";
 
 // ============================================
+// TYPE DEFINITIONS
+// ============================================
+
+type SubjectPermission = "create" | "delete" | "view" | "edit" | "list";
+
+// ============================================
 // HELPER FUNCTIONS
 // ============================================
 
@@ -41,7 +32,7 @@ import { ZodError } from "zod";
  * Verify user session and permissions
  */
 async function verifySessionAndPermission(permission: {
-  subject: string[];
+  subject: SubjectPermission[];
 }): Promise<{
   success: boolean;
   message?: string;
@@ -193,13 +184,10 @@ export async function createSubject(
       throw error;
     }
 
-    // STEP 3: Check for duplicate name
+    // STEP 3: Check for duplicate name (MySQL case-insensitive by default)
     const existingSubject = await prisma.subject.findFirst({
       where: {
-        name: {
-          equals: validatedData.name,
-          mode: "insensitive",
-        },
+        name: validatedData.name,
         deletedAt: null,
       },
     });
@@ -316,26 +304,31 @@ export async function listSubjects(
     }
 
     // STEP 3: Build where clause
-    const where: Parameters<typeof prisma.subject.findMany>[0]["where"] = {
+    const whereClause: {
+      deletedAt: null;
+      isActive?: boolean;
+      OR?: Array<{
+        name?: { contains: string };
+        code?: { contains: string };
+      }>;
+    } = {
       deletedAt: null,
     };
 
     if (validatedParams.isActive !== undefined) {
-      where.isActive = validatedParams.isActive;
+      whereClause.isActive = validatedParams.isActive;
     }
 
     if (validatedParams.search) {
-      where.OR = [
+      whereClause.OR = [
         {
           name: {
             contains: validatedParams.search,
-            mode: "insensitive",
           },
         },
         {
           code: {
             contains: validatedParams.search,
-            mode: "insensitive",
           },
         },
       ];
@@ -344,8 +337,17 @@ export async function listSubjects(
     // STEP 4: Fetch subjects with counts
     const [subjects, total] = await Promise.all([
       prisma.subject.findMany({
-        where,
-        include: {
+        where: whereClause,
+        select: {
+          id: true,
+          name: true,
+          code: true,
+          description: true,
+          isActive: true,
+          createdBy: true,
+          createdAt: true,
+          updatedAt: true,
+          deletedAt: true,
           _count: {
             select: {
               questions: true,
@@ -359,7 +361,7 @@ export async function listSubjects(
         skip: validatedParams.offset,
         take: validatedParams.limit,
       }),
-      prisma.subject.count({ where }),
+      prisma.subject.count({ where: whereClause }),
     ]);
 
     // STEP 5: Audit log
@@ -458,10 +460,7 @@ export async function updateSubject(
       const duplicateName = await prisma.subject.findFirst({
         where: {
           id: { not: subjectId },
-          name: {
-            equals: validatedData.name,
-            mode: "insensitive",
-          },
+          name: validatedData.name,
           deletedAt: null,
         },
       });
