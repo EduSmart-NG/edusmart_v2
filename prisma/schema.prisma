@@ -133,6 +133,33 @@ model KeyValueStore {
   @@map("key_value_store")
 }
 
+
+model Subject {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  code        String?   @unique @map("code") // Optional short code (e.g., "MATH", "ENG")
+  description String?   @db.Text
+  isActive    Boolean   @default(true) @map("is_active")
+  
+  // Audit fields
+  createdBy   String    @map("created_by")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at") // Soft delete
+  
+  // Relations
+  questions   Question[]
+  exams       Exam[]
+  
+  // Indexes for performance
+  @@index([name])
+  @@index([code])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@index([createdBy])
+  @@map("subjects")
+}
+
 // ============================================
 // QUESTION BANK MODELS (VALUES ENCRYPTED, NAMES UNCHANGED)
 // ============================================
@@ -141,7 +168,10 @@ model Question {
   id           String @id @default(cuid())
   examType     String @map("exam_type")
   year         Int
-  subject      String
+  
+  subjectId    String?  @map("subject_id")
+  subject      Subject? @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  
   questionType String @map("question_type") // multiple_choice, true_false, essay, fill_in_blank
 
   // Encrypted value stored as JSON: { ciphertext, iv, tag, salt }
@@ -166,10 +196,11 @@ model Question {
 
   // Relations
   options QuestionOption[]
-  exams   ExamQuestion[] // ✅ NEW: Relation to exams
+  exams   ExamQuestion[]
 
   // Indexes for performance
-  @@index([examType, year, subject])
+  @@index([examType, year, subjectId]) 
+  @@index([subjectId]) 
   @@index([questionType])
   @@index([difficultyLevel])
   @@index([createdBy])
@@ -197,13 +228,16 @@ model QuestionOption {
 }
 
 // ============================================
-// EXAM MODELS - ✅ NEW
+// EXAM MODELS
 // ============================================
 
 model Exam {
   id               String    @id @default(cuid())
   examType         String    @map("exam_type") // WAEC, JAMB, NECO, etc.
-  subject          String
+  
+  subjectId        String?    @map("subject_id")
+  subject          Subject?   @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  
   year             Int
   title            String
   description      String?   @db.Text
@@ -229,7 +263,8 @@ model Exam {
   questions ExamQuestion[]
 
   // Indexes for performance
-  @@index([examType, year, subject])
+  @@index([examType, year, subjectId]) 
+  @@index([subjectId]) 
   @@index([status])
   @@index([createdBy])
   @@index([deletedAt])
