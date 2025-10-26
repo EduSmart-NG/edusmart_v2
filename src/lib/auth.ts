@@ -13,6 +13,7 @@ import { questionUploadPlugin } from "@/lib/plugins/question-upload/server";
 import { ac, roles } from "@/lib/rbac/permissions";
 import { examUploadPlugin } from "./plugins/exam-upload/server";
 import { questionBulkPlugin } from "./plugins/bulk-question/server";
+import { examPlugin } from "./plugins/exam-session/server";
 
 export const auth = betterAuth({
   database: prismaAdapter(prisma, {
@@ -47,8 +48,18 @@ export const auth = betterAuth({
     captcha({
       provider: "google-recaptcha",
       secretKey: process.env.RECAPTCHA_SECRET_KEY!,
-      minScore: 0.5,
-      endpoints: ["/sign-up/email", "/sign-in/email", "/forget-password"],
+      minScore: 0.7,
+      endpoints: [
+        "/sign-up/email",
+        "/sign-in/email",
+        "/forget-password",
+        "/exam-session/access-check",
+        "/exam-session/start",
+        "/exam-session/status",
+        "/exam-session/submit-answer",
+        "/exam-session/complete",
+        "/exam-session/track-violation",
+      ],
     }),
     twoFactor({
       issuer: "EduSmart",
@@ -107,6 +118,17 @@ export const auth = betterAuth({
         window: 300, // 5 minutes
         max: 10, // 10 exam creations per 5 minutes
       },
+    }),
+    examPlugin({
+      apiKey: process.env.EXAM_SESSION_API_KEY!,
+      enableRateLimit: true,
+      rateLimit: {
+        window: 3600, // 1 hour in seconds
+        max: 100, // 100 per hour
+      },
+      maxConcurrentSessions: 1,
+      violationLimit: 10,
+      autoSubmitOnViolationLimit: true,
     }),
     nextCookies(), // MUST be last plugin in array
   ],
