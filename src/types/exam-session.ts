@@ -1,29 +1,25 @@
-/**
- * Type definitions for Exam Plugin
- */
-
 export interface Exam {
   id: string;
   examType: string;
   subject: string;
   year: number;
   title: string;
-  description?: string;
+  description: string | null;
   duration: number;
-  passingScore?: number;
-  maxAttempts?: number;
+  passingScore: number | null;
+  maxAttempts: number | null;
   shuffleQuestions: boolean;
   randomizeOptions: boolean;
   isPublic: boolean;
   isFree: boolean;
   status: string;
-  category?: string;
-  startDate?: Date;
-  endDate?: Date;
+  category: string | null;
+  startDate: Date | null;
+  endDate: Date | null;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
-  deletedAt?: Date;
+  deletedAt: Date | null;
   totalQuestions?: number;
 }
 
@@ -33,13 +29,13 @@ export interface ExamSession {
   examId: string;
   examType: string;
   startedAt: Date;
-  completedAt?: Date;
-  timeLimit?: number;
+  completedAt: Date | null;
+  timeLimit: number | null;
   configuredQuestions: number;
   shuffleQuestions: boolean;
   shuffleOptions: boolean;
   status: string;
-  score?: number;
+  score: number | null;
   totalQuestions: number;
   answeredQuestions: number;
   violationCount: number;
@@ -114,4 +110,156 @@ export interface User {
   email: string;
   role?: string;
   [key: string]: unknown;
+}
+
+export interface ExamAccessResult {
+  success: boolean;
+  message: string;
+  code?: string;
+  data?: {
+    exam: Exam;
+    accessType: "direct" | "invitation" | "public";
+    requiresConfig: boolean;
+    userAttempts: number;
+    maxAttempts?: number;
+  };
+}
+
+export interface ExamConfigResult {
+  success: boolean;
+  message: string;
+  code?: string;
+  data?: {
+    examId: string;
+    title: string;
+    instructions: string[];
+    examType: string;
+    category: string;
+    timeLimit?: number;
+    shuffleQuestions: boolean;
+    shuffleOptions: boolean;
+  };
+}
+
+export interface ExamSessionResult {
+  success: boolean;
+  message: string;
+  code?: string;
+  data?: {
+    sessionId: string;
+    examId: string;
+    startedAt: Date;
+    serverEndTime?: Date;
+    totalQuestions: number;
+    questionOrder: string[];
+    timeLimit?: number;
+  };
+}
+
+export interface QuestionData {
+  id: string;
+  questionText: string;
+  questionImage?: string;
+  questionType: string;
+  questionPoint: number;
+  timeLimit?: number;
+  options: Array<{
+    id: string;
+    optionText: string;
+    optionImage?: string;
+    orderIndex: number;
+  }>;
+}
+
+export interface GetQuestionResult {
+  success: boolean;
+  message: string;
+  code?: string;
+  data?: {
+    question: QuestionData;
+    questionIndex: number;
+    totalQuestions: number;
+    remainingTime?: number;
+    isExpired: boolean;
+  };
+}
+
+export interface AnswerFeedback {
+  isCorrect: boolean;
+  correctOptionId?: string;
+  explanation?: string;
+}
+
+export interface SubmitAnswerResult {
+  success: boolean;
+  message: string;
+  code?: string;
+  feedback?: AnswerFeedback;
+}
+
+export interface ExamCompletionResult {
+  success: boolean;
+  message: string;
+  code?: string;
+  data?: {
+    sessionId: string;
+    score: number;
+    correctAnswers: number;
+    totalQuestions: number;
+    completedAt: Date;
+    passed?: boolean;
+  };
+}
+
+export interface ViolationTrackingResult {
+  success: boolean;
+  message: string;
+  code?: string;
+  data?: {
+    violationCount: number;
+    autoSubmitted: boolean;
+    sessionStatus: string;
+  };
+}
+
+export interface ServerTimeSync {
+  success: boolean;
+  serverTime: Date;
+  remainingTime?: number;
+  isExpired: boolean;
+}
+
+export interface ExamResultsData {
+  sessionId: string;
+  examTitle: string;
+  examType: string;
+  category: string;
+  score: number;
+  correctAnswers: number;
+  totalQuestions: number;
+  timeSpent: number;
+  passed?: boolean;
+  completedAt: Date;
+  questions?: Array<{
+    questionText: string;
+    userAnswer?: string;
+    correctAnswer?: string;
+    isCorrect: boolean;
+    explanation?: string;
+  }>;
+  leaderboardPosition?: number;
+  totalParticipants?: number;
+}
+
+export interface ExamResultsResult {
+  success: boolean;
+  message: string;
+  code?: string;
+  data?: ExamResultsData;
+}
+
+export interface AbandonSessionResult {
+  success: boolean;
+  message: string;
+  code?: string;
 }
