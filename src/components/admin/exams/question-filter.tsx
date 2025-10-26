@@ -1,9 +1,5 @@
 "use client";
 
-/**
- * Questions Filters Component - Client Component for URL state management
- */
-
 import * as React from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { Search, X } from "lucide-react";
@@ -29,7 +25,7 @@ const QUESTION_TYPES = [
 
 type SortByOption = "createdAt" | "examType" | "subject" | "year";
 
-export function QuestionsFilters() {
+export const QuestionsFilters = React.memo(function QuestionsFilters() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -46,15 +42,31 @@ export function QuestionsFilters() {
 
   const [searchValue, setSearchValue] = React.useState(currentSearch);
 
-  const hasActiveFilters =
-    currentSearch ||
-    currentExamType !== "all" ||
-    currentSubject !== "all" ||
-    currentYear !== "all" ||
-    currentDifficulty !== "all" ||
-    currentQuestionType !== "all" ||
-    currentSortBy !== "createdAt" ||
-    currentSortOrder !== "desc";
+  React.useEffect(() => {
+    setSearchValue(currentSearch);
+  }, [currentSearch]);
+
+  const hasActiveFilters = React.useMemo(
+    () =>
+      currentSearch ||
+      currentExamType !== "all" ||
+      currentSubject !== "all" ||
+      currentYear !== "all" ||
+      currentDifficulty !== "all" ||
+      currentQuestionType !== "all" ||
+      currentSortBy !== "createdAt" ||
+      currentSortOrder !== "desc",
+    [
+      currentSearch,
+      currentExamType,
+      currentSubject,
+      currentYear,
+      currentDifficulty,
+      currentQuestionType,
+      currentSortBy,
+      currentSortOrder,
+    ]
+  );
 
   const updateURL = React.useCallback(
     (updates: Record<string, string | null>) => {
@@ -79,17 +91,69 @@ export function QuestionsFilters() {
 
   const debouncedSearch = useDebouncedCallback((value: string) => {
     updateURL({ search: value || null });
-  }, 300);
+  }, 500);
 
-  const handleSearchChange = (value: string) => {
-    setSearchValue(value);
-    debouncedSearch(value);
-  };
+  const handleSearchChange = React.useCallback(
+    (value: string) => {
+      setSearchValue(value);
+      debouncedSearch(value);
+    },
+    [debouncedSearch]
+  );
 
-  const handleResetFilters = () => {
+  const handleResetFilters = React.useCallback(() => {
     setSearchValue("");
     router.push(pathname, { scroll: false });
-  };
+  }, [pathname, router]);
+
+  const handleExamTypeChange = React.useCallback(
+    (value: string) => {
+      updateURL({ exam_type: value === "all" ? null : value });
+    },
+    [updateURL]
+  );
+
+  const handleSubjectChange = React.useCallback(
+    (value: string) => {
+      updateURL({ subject: value === "all" ? null : value });
+    },
+    [updateURL]
+  );
+
+  const handleYearChange = React.useCallback(
+    (value: string) => {
+      updateURL({ year: value === "all" ? null : value });
+    },
+    [updateURL]
+  );
+
+  const handleDifficultyChange = React.useCallback(
+    (value: string) => {
+      updateURL({ difficulty: value === "all" ? null : value });
+    },
+    [updateURL]
+  );
+
+  const handleQuestionTypeChange = React.useCallback(
+    (value: string) => {
+      updateURL({ question_type: value === "all" ? null : value });
+    },
+    [updateURL]
+  );
+
+  const handleSortByChange = React.useCallback(
+    (value: string) => {
+      updateURL({ sort_by: value as SortByOption });
+    },
+    [updateURL]
+  );
+
+  const handleSortOrderChange = React.useCallback(
+    (value: string) => {
+      updateURL({ sort_order: value });
+    },
+    [updateURL]
+  );
 
   return (
     <div className="space-y-4">
@@ -116,12 +180,7 @@ export function QuestionsFilters() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Select
-          value={currentExamType}
-          onValueChange={(value) =>
-            updateURL({ exam_type: value === "all" ? null : value })
-          }
-        >
+        <Select value={currentExamType} onValueChange={handleExamTypeChange}>
           <SelectTrigger className="w-[140px]">
             <SelectValue placeholder="Exam Type" />
           </SelectTrigger>
@@ -135,12 +194,7 @@ export function QuestionsFilters() {
           </SelectContent>
         </Select>
 
-        <Select
-          value={currentSubject}
-          onValueChange={(value) =>
-            updateURL({ subject: value === "all" ? null : value })
-          }
-        >
+        <Select value={currentSubject} onValueChange={handleSubjectChange}>
           <SelectTrigger className="w-[180px]">
             <SelectValue placeholder="Subject" />
           </SelectTrigger>
@@ -154,12 +208,7 @@ export function QuestionsFilters() {
           </SelectContent>
         </Select>
 
-        <Select
-          value={currentYear}
-          onValueChange={(value) =>
-            updateURL({ year: value === "all" ? null : value })
-          }
-        >
+        <Select value={currentYear} onValueChange={handleYearChange}>
           <SelectTrigger className="w-[120px]">
             <SelectValue placeholder="Year" />
           </SelectTrigger>
@@ -175,9 +224,7 @@ export function QuestionsFilters() {
 
         <Select
           value={currentDifficulty}
-          onValueChange={(value) =>
-            updateURL({ difficulty: value === "all" ? null : value })
-          }
+          onValueChange={handleDifficultyChange}
         >
           <SelectTrigger className="w-[130px]">
             <SelectValue placeholder="Difficulty" />
@@ -194,9 +241,7 @@ export function QuestionsFilters() {
 
         <Select
           value={currentQuestionType}
-          onValueChange={(value) =>
-            updateURL({ question_type: value === "all" ? null : value })
-          }
+          onValueChange={handleQuestionTypeChange}
         >
           <SelectTrigger className="w-[160px]">
             <SelectValue placeholder="Question Type" />
@@ -214,12 +259,7 @@ export function QuestionsFilters() {
           </SelectContent>
         </Select>
 
-        <Select
-          value={currentSortBy}
-          onValueChange={(value) =>
-            updateURL({ sort_by: value as SortByOption })
-          }
-        >
+        <Select value={currentSortBy} onValueChange={handleSortByChange}>
           <SelectTrigger className="w-[140px]">
             <SelectValue placeholder="Sort By" />
           </SelectTrigger>
@@ -231,10 +271,7 @@ export function QuestionsFilters() {
           </SelectContent>
         </Select>
 
-        <Select
-          value={currentSortOrder}
-          onValueChange={(value) => updateURL({ sort_order: value })}
-        >
+        <Select value={currentSortOrder} onValueChange={handleSortOrderChange}>
           <SelectTrigger className="w-[120px]">
             <SelectValue placeholder="Order" />
           </SelectTrigger>
@@ -246,4 +283,4 @@ export function QuestionsFilters() {
       </div>
     </div>
   );
-}
+});

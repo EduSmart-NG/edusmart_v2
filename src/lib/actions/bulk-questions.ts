@@ -536,7 +536,7 @@ export async function bulkExportQuestions(
       success: true,
       message: `Exported ${exportResult.data.length} questions`,
       data: {
-        buffer: fileResult.buffer,
+        buffer: Array.from(fileResult.buffer),
         filename: fileResult.filename,
         mimeType: fileResult.mimeType,
         size: fileResult.size,

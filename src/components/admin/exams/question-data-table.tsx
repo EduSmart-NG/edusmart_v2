@@ -70,7 +70,11 @@ function getDifficultyVariant(
   }
 }
 
-function RowActions({ question }: { question: QuestionDecrypted }) {
+const RowActions = React.memo(function RowActions({
+  question,
+}: {
+  question: QuestionDecrypted;
+}) {
   const router = useRouter();
 
   return (
@@ -106,9 +110,9 @@ function RowActions({ question }: { question: QuestionDecrypted }) {
       </DropdownMenuContent>
     </DropdownMenu>
   );
-}
+});
 
-function Pagination({
+const Pagination = React.memo(function Pagination({
   currentPage,
   totalPages,
   pageSize,
@@ -121,18 +125,24 @@ function Pagination({
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const navigateToPage = (page: number) => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("page", page.toString());
-    router.push(`${pathname}?${params.toString()}`, { scroll: false });
-  };
+  const navigateToPage = React.useCallback(
+    (page: number) => {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("page", page.toString());
+      router.push(`${pathname}?${params.toString()}`, { scroll: false });
+    },
+    [pathname, router, searchParams]
+  );
 
-  const changePageSize = (newSize: string) => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("limit", newSize);
-    params.delete("page");
-    router.push(`${pathname}?${params.toString()}`, { scroll: false });
-  };
+  const changePageSize = React.useCallback(
+    (newSize: string) => {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("limit", newSize);
+      params.delete("page");
+      router.push(`${pathname}?${params.toString()}`, { scroll: false });
+    },
+    [pathname, router, searchParams]
+  );
 
   return (
     <div className="flex items-center justify-between px-2">
@@ -202,7 +212,91 @@ function Pagination({
       </div>
     </div>
   );
-}
+});
+
+const QuestionRow = React.memo(function QuestionRow({
+  question,
+}: {
+  question: QuestionDecrypted;
+}) {
+  const formattedDate = React.useMemo(
+    () => format(new Date(question.createdAt), "MMM d, yyyy"),
+    [question.createdAt]
+  );
+
+  const formattedTime = React.useMemo(
+    () => format(new Date(question.createdAt), "h:mm a"),
+    [question.createdAt]
+  );
+
+  const questionTypeFormatted = React.useMemo(
+    () =>
+      question.questionType
+        .split("_")
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(" "),
+    [question.questionType]
+  );
+
+  const difficultyFormatted = React.useMemo(
+    () =>
+      question.difficultyLevel.charAt(0).toUpperCase() +
+      question.difficultyLevel.slice(1),
+    [question.difficultyLevel]
+  );
+
+  return (
+    <TableRow>
+      <TableCell className="w-[300px]">
+        <div className="max-w-[300px] overflow-hidden">
+          <Link
+            href={`/cp/admin-dashboard/questions/${question.id}`}
+            className="text-sm font-medium truncate hover:underline"
+          >
+            {truncateText(question.questionText, 60)}
+          </Link>
+        </div>
+      </TableCell>
+
+      <TableCell>
+        <Badge variant="outline">{question.examType}</Badge>
+      </TableCell>
+
+      <TableCell>{question.subject}</TableCell>
+
+      <TableCell>
+        <span className="font-medium">{question.year}</span>
+      </TableCell>
+
+      <TableCell>
+        <span className="text-sm text-muted-foreground">
+          {questionTypeFormatted}
+        </span>
+      </TableCell>
+
+      <TableCell>
+        <Badge variant={getDifficultyVariant(question.difficultyLevel)}>
+          {difficultyFormatted}
+        </Badge>
+      </TableCell>
+
+      <TableCell>
+        <span className="font-medium">{question.questionPoint}</span>
+      </TableCell>
+
+      <TableCell>
+        <div className="flex flex-col">
+          <span className="text-sm">{formattedDate}</span>
+          <span className="text-xs text-muted-foreground">{formattedTime}</span>
+        </div>
+      </TableCell>
+
+      <TableCell className="text-right">
+        <RowActions question={question} />
+      </TableCell>
+    </TableRow>
+  );
+});
 
 export function QuestionsTable({
   questions,
@@ -244,71 +338,9 @@ export function QuestionsTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {questions.map((question) => {
-              return (
-                <TableRow key={question.id}>
-                  <TableCell className="w-[300px]">
-                    <div className="max-w-[300px] overflow-hidden">
-                      <Link
-                        href={`/cp/admin-dashboard/questions/${question.id}`}
-                        className="text-sm font-medium truncate hover:underline"
-                      >
-                        {truncateText(question.questionText, 60)}
-                      </Link>
-                    </div>
-                  </TableCell>
-
-                  <TableCell>
-                    <Badge variant="outline">{question.examType}</Badge>
-                  </TableCell>
-
-                  <TableCell>{question.subject}</TableCell>
-
-                  <TableCell>
-                    <span className="font-medium">{question.year}</span>
-                  </TableCell>
-
-                  <TableCell>
-                    <span className="text-sm text-muted-foreground">
-                      {question.questionType
-                        .split("_")
-                        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-                        .join(" ")}
-                    </span>
-                  </TableCell>
-
-                  <TableCell>
-                    <Badge
-                      variant={getDifficultyVariant(question.difficultyLevel)}
-                    >
-                      {question.difficultyLevel.charAt(0).toUpperCase() +
-                        question.difficultyLevel.slice(1)}
-                    </Badge>
-                  </TableCell>
-
-                  <TableCell>
-                    <span className="font-medium">
-                      {question.questionPoint}
-                    </span>
-                  </TableCell>
-
-                  <TableCell>
-                    <div className="flex flex-col">
-                      <span className="text-sm">
-                        {format(new Date(question.createdAt), "MMM d, yyyy")}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {format(new Date(question.createdAt), "h:mm a")}
-                      </span>
-                    </div>
-                  </TableCell>
-
-                  <TableCell className="text-right">
-                    <RowActions question={question} />
-                  </TableCell>
-                </TableRow>
-              );
-            })}
+            {questions.map((question) => (
+              <QuestionRow key={question.id} question={question} />
+            ))}
           </TableBody>
         </Table>
       </div>

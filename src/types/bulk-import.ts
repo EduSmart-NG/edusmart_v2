@@ -85,6 +85,91 @@ export interface TemplateOptions {
 }
 
 /**
+ * Template request for downloading
+ */
+export interface TemplateRequest {
+  format: BulkFormat;
+  includeSamples?: boolean;
+}
+
+/**
+ * Template data returned from server action
+ */
+export interface TemplateData {
+  buffer: string; // Base64 encoded for serialization
+  filename: string;
+  mimeType: string;
+  size: number;
+}
+
+/**
+ * Template response from server action
+ */
+export interface TemplateResponse {
+  success: boolean;
+  message: string;
+  code?: string;
+  data?: TemplateData;
+}
+
+/**
+ * Filter options for bulk export
+ */
+export interface FilterOptions {
+  subjects: string[];
+  examTypes: string[];
+  years: number[];
+}
+
+/**
+ * Bulk export query with advanced filters
+ */
+export interface BulkExportQuery {
+  format: BulkFormat;
+
+  // Legacy single-value filters (backward compatible)
+  examType?: string;
+  subject?: string;
+  year?: number;
+  difficultyLevel?: string;
+  questionType?: string;
+
+  // New multi-value filters
+  subjects?: string[];
+  examTypes?: string[];
+  difficulty?: string[];
+
+  // Range filters
+  yearFrom?: number;
+  yearTo?: number;
+
+  // Manual selection
+  questionIds?: string[];
+
+  // Status filters
+  status?: "active" | "inactive" | "all";
+  includeDeleted?: boolean;
+
+  // Pagination
+  limit?: number;
+}
+
+/**
+ * Bulk export response
+ */
+export interface BulkExportResponse {
+  success: boolean;
+  message: string;
+  code?: string;
+  data?: {
+    buffer: number[];
+    filename: string;
+    mimeType: string;
+    size: number;
+  };
+}
+
+/**
  * Generic format handler interface
  */
 export interface FormatHandler<T = Record<string, unknown>> {

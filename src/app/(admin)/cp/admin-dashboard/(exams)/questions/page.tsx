@@ -1,4 +1,4 @@
-import { Suspense } from "react";
+import { Suspense, cache } from "react";
 import type { Metadata } from "next";
 import {
   FileQuestion,
@@ -6,6 +6,8 @@ import {
   AlertCircle,
   HelpCircle,
   Plus,
+  Upload,
+  Download,
 } from "lucide-react";
 import {
   Card,
@@ -32,6 +34,10 @@ export const metadata: Metadata = {
   description: "Manage exam questions and question bank",
 };
 
+// ISR Configuration
+export const revalidate = 300; // Revalidate every 5 minutes
+export const dynamic = "force-dynamic"; // For filters/search
+
 // ============================================
 // TYPES
 // ============================================
@@ -52,23 +58,25 @@ interface PageProps {
 }
 
 // ============================================
-// STATS FUNCTIONS
+// CACHED STATS FUNCTIONS
 // ============================================
 
-async function getQuestionStats() {
-  const [totalQuestions, easyQuestions, mediumQuestions, hardQuestions] =
-    await Promise.all([
-      prisma.question.count({ where: { deletedAt: null } }),
-      prisma.question.count({
-        where: { deletedAt: null, difficultyLevel: "easy" },
-      }),
-      prisma.question.count({
-        where: { deletedAt: null, difficultyLevel: "medium" },
-      }),
-      prisma.question.count({
-        where: { deletedAt: null, difficultyLevel: "hard" },
-      }),
-    ]);
+const getQuestionStats = cache(async () => {
+  const [totalQuestions, difficultyStats] = await Promise.all([
+    prisma.question.count({ where: { deletedAt: null } }),
+    prisma.question.groupBy({
+      by: ["difficultyLevel"],
+      where: { deletedAt: null },
+      _count: true,
+    }),
+  ]);
+
+  const easyQuestions =
+    difficultyStats.find((s) => s.difficultyLevel === "easy")?._count || 0;
+  const mediumQuestions =
+    difficultyStats.find((s) => s.difficultyLevel === "medium")?._count || 0;
+  const hardQuestions =
+    difficultyStats.find((s) => s.difficultyLevel === "hard")?._count || 0;
 
   return {
     totalQuestions,
@@ -76,7 +84,7 @@ async function getQuestionStats() {
     mediumQuestions,
     hardQuestions,
   };
-}
+});
 
 // ============================================
 // STATS CARD COMPONENT
@@ -229,13 +237,11 @@ async function QuestionsTableWrapper({
 // ============================================
 
 export default async function AdminQuestionsPage({ searchParams }: PageProps) {
-  // Parse search params
   const params = await searchParams;
   const page = parseInt(params.page || "1");
   const limit = parseInt(params.limit || "20");
   const offset = (page - 1) * limit;
 
-  // Build query for server action
   const sortBy = params.sort_by as
     | "createdAt"
     | "examType"
@@ -259,27 +265,36 @@ export default async function AdminQuestionsPage({ searchParams }: PageProps) {
 
   return (
     <div className="flex-1 space-y-4 p-4 pt-6 md:p-8">
-      {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-muted-foreground">
-            Manage and organize question bank
-          </p>
+          <Button asChild variant="outline">
+            <Link href="/cp/admin-dashboard/questions/new">
+              <Plus className="mr-2 h-4 w-4" />
+              Add Question
+            </Link>
+          </Button>
         </div>
-        <Button asChild variant="outline">
-          <Link href="/cp/admin-dashboard/questions/new">
-            <Plus className="mr-2 h-4 w-4" />
-            Add Question
-          </Link>
-        </Button>
+        <div className="flex gap-2">
+          <Button asChild>
+            <Link href="/cp/admin-dashboard/questions/bulk-import">
+              <Upload className="mr-2 h-4 w-4" />
+              Import Questions
+            </Link>
+          </Button>
+
+          <Button asChild variant="secondary">
+            <Link href="/cp/admin-dashboard/questions/bulk-export">
+              <Download className="mr-2 h-4 w-4" />
+              Export Questions
+            </Link>
+          </Button>
+        </div>
       </div>
 
-      {/* Stats cards with parallel loading */}
       <Suspense fallback={<StatsSkeleton />}>
         <StatsCards />
       </Suspense>
 
-      {/* Main content card */}
       <Card>
         <CardHeader>
           <CardTitle>All Questions</CardTitle>
@@ -288,10 +303,8 @@ export default async function AdminQuestionsPage({ searchParams }: PageProps) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {/* Filters */}
           <QuestionsFilters />
 
-          {/* Table with streaming */}
           <div className="mt-6">
             <Suspense fallback={<TableSkeleton />}>
               <QuestionsTableWrapper searchParams={query} />

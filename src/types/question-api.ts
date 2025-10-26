@@ -358,6 +358,13 @@ export interface BulkExportQuery {
   questionType?: string;
   limit?: number;
   includeDeleted?: boolean;
+  questionIds?: string[];
+  subjects?: string[];
+  examTypes?: string[];
+  yearFrom?: number;
+  yearTo?: number;
+  status?: "active" | "inactive" | "all";
+  difficulty?: string[];
 }
 
 export interface BulkExportProgress {
@@ -373,7 +380,7 @@ export interface BulkExportResponse {
   message: string;
   code?: string;
   data?: {
-    buffer: Buffer;
+    buffer: number[];
     filename: string;
     mimeType: string;
     size: number;
