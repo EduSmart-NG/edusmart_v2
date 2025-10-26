@@ -1,16 +1,3 @@
-/**
- * Exam Session Plugin - FIXED
- *
- * Better Auth plugin for secure exam session management with:
- * - Triple authentication (session + API key + reCAPTCHA)
- * - Server-side timing to prevent manipulation
- * - Rate limiting
- * - Anti-cheat tracking
- * - Support for Practice, Test, Recruitment, Competition, and Challenge modes
- *
- * @module lib/plugins/exam-session/server
- */
-
 import type { BetterAuthPlugin } from "better-auth";
 import { createAuthEndpoint } from "better-auth/api";
 import { sessionMiddleware } from "better-auth/api";
@@ -33,7 +20,6 @@ import type {
 
 const PLUGIN_ID = "exam-session";
 const API_KEY_HEADER = "x-exam-api-key";
-const RECAPTCHA_HEADER = "x-captcha-token";
 
 // ============================================
 // VALIDATION SCHEMAS
@@ -72,12 +58,6 @@ export interface ExamPluginOptions {
   apiKey: string;
 
   /**
-   * reCAPTCHA secret key
-   * Required for reCAPTCHA validation
-   */
-  recaptchaSecretKey?: string;
-
-  /**
    * Enable rate limiting
    * @default true
    */
@@ -113,33 +93,6 @@ export interface ExamPluginOptions {
 // ============================================
 // HELPER FUNCTIONS
 // ============================================
-
-/**
- * Verify reCAPTCHA token
- */
-async function verifyRecaptcha(
-  token: string,
-  secretKey: string
-): Promise<boolean> {
-  try {
-    const response = await fetch(
-      "https://www.google.com/recaptcha/api/siteverify",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: `secret=${secretKey}&response=${token}`,
-      }
-    );
-
-    const data = await response.json();
-    return data.success === true && data.score >= 0.5; // Adjust score threshold as needed
-  } catch (error) {
-    console.error("reCAPTCHA verification error:", error);
-    return false;
-  }
-}
 
 /**
  * Calculate remaining time for exam session
@@ -308,7 +261,7 @@ export const examPlugin = (options: ExamPluginOptions): BetterAuthPlugin => {
       // CHECK EXAM ACCESS
       // ============================================
       checkExamAccess: createAuthEndpoint(
-        "/exam/access-check",
+        "/exam-session/access-check",
         {
           method: "POST",
           use: [sessionMiddleware],
@@ -331,34 +284,14 @@ export const examPlugin = (options: ExamPluginOptions): BetterAuthPlugin => {
               });
             }
 
-            // STEP 3: Validate reCAPTCHA (if configured)
-            if (options.recaptchaSecretKey) {
-              const recaptchaToken = ctx.headers?.get(RECAPTCHA_HEADER);
-              if (!recaptchaToken) {
-                throw new APIError("BAD_REQUEST", {
-                  message: "reCAPTCHA token required",
-                });
-              }
-
-              const isValid = await verifyRecaptcha(
-                recaptchaToken,
-                options.recaptchaSecretKey
-              );
-              if (!isValid) {
-                throw new APIError("FORBIDDEN", {
-                  message: "reCAPTCHA verification failed",
-                });
-              }
-            }
-
-            // STEP 4: Parse request body
+            // STEP 3: Parse request body
             const bodySchema = z.object({
               examId: examIdSchema,
               invitationToken: z.string().optional(),
             });
             const body = bodySchema.parse(await ctx.body);
 
-            // STEP 5: Fetch exam
+            // STEP 4: Fetch exam
             const exam = await ctx.context.adapter.findOne<Exam>({
               model: "exam",
               where: [{ field: "id", value: body.examId }],
@@ -380,7 +313,7 @@ export const examPlugin = (options: ExamPluginOptions): BetterAuthPlugin => {
               });
             }
 
-            // STEP 6: Check exam date constraints
+            // STEP 5: Check exam date constraints
             const now = new Date();
             if (exam.startDate && new Date(exam.startDate) > now) {
               throw new APIError("FORBIDDEN", {
@@ -393,7 +326,7 @@ export const examPlugin = (options: ExamPluginOptions): BetterAuthPlugin => {
               });
             }
 
-            // STEP 7: Fetch user
+            // STEP 6: Fetch user
             const user = await ctx.context.adapter.findOne<User>({
               model: "user",
               where: [{ field: "id", value: session.user.id }],
@@ -405,7 +338,7 @@ export const examPlugin = (options: ExamPluginOptions): BetterAuthPlugin => {
               });
             }
 
-            // STEP 8: Validate access based on exam type
+            // STEP 7: Validate access based on exam type
             const examType = exam.category?.toLowerCase() || "practice";
 
             if (examType === "recruitment" || examType === "competition") {
@@ -540,7 +473,7 @@ export const examPlugin = (options: ExamPluginOptions): BetterAuthPlugin => {
       // START EXAM SESSION
       // ============================================
       startExamSession: createAuthEndpoint(
-        "/exam/start",
+        "/exam-session/start",
         {
           method: "POST",
           use: [sessionMiddleware],
@@ -563,27 +496,7 @@ export const examPlugin = (options: ExamPluginOptions): BetterAuthPlugin => {
               });
             }
 
-            // STEP 3: Validate reCAPTCHA (if configured)
-            if (options.recaptchaSecretKey) {
-              const recaptchaToken = ctx.headers?.get(RECAPTCHA_HEADER);
-              if (!recaptchaToken) {
-                throw new APIError("BAD_REQUEST", {
-                  message: "reCAPTCHA token required",
-                });
-              }
-
-              const isValid = await verifyRecaptcha(
-                recaptchaToken,
-                options.recaptchaSecretKey
-              );
-              if (!isValid) {
-                throw new APIError("FORBIDDEN", {
-                  message: "reCAPTCHA verification failed",
-                });
-              }
-            }
-
-            // STEP 4: Parse request body
+            // STEP 3: Parse request body
             const bodySchema = z.object({
               examId: examIdSchema,
               configuredQuestions: z.number().int().positive().optional(),
@@ -594,7 +507,7 @@ export const examPlugin = (options: ExamPluginOptions): BetterAuthPlugin => {
             });
             const body = bodySchema.parse(await ctx.body);
 
-            // STEP 5: Check concurrent sessions
+            // STEP 4: Check concurrent sessions
             const activeSessions =
               await ctx.context.adapter.findMany<ExamSession>({
                 model: "examSession",
@@ -610,7 +523,7 @@ export const examPlugin = (options: ExamPluginOptions): BetterAuthPlugin => {
               });
             }
 
-            // STEP 6: Fetch exam with questions
+            // STEP 5: Fetch exam with questions
             const exam = await ctx.context.adapter.findOne<Exam>({
               model: "exam",
               where: [{ field: "id", value: body.examId }],
@@ -620,7 +533,7 @@ export const examPlugin = (options: ExamPluginOptions): BetterAuthPlugin => {
               throw new APIError("NOT_FOUND", { message: "Exam not found" });
             }
 
-            // STEP 7: Get exam questions
+            // STEP 6: Get exam questions
             const examQuestions =
               await ctx.context.adapter.findMany<ExamQuestion>({
                 model: "examQuestion",
@@ -633,7 +546,7 @@ export const examPlugin = (options: ExamPluginOptions): BetterAuthPlugin => {
               });
             }
 
-            // STEP 8: Determine question selection
+            // STEP 7: Determine question selection
             const totalAvailable = examQuestions.length;
             const configuredQuestions =
               body.configuredQuestions || totalAvailable;
@@ -642,7 +555,7 @@ export const examPlugin = (options: ExamPluginOptions): BetterAuthPlugin => {
               totalAvailable
             );
 
-            // STEP 9: Generate question order
+            // STEP 8: Generate question order
             let questionOrder: string[];
             if (body.shuffleQuestions) {
               // Shuffle and take the configured number
@@ -660,7 +573,7 @@ export const examPlugin = (options: ExamPluginOptions): BetterAuthPlugin => {
                 .map((eq) => eq.questionId);
             }
 
-            // STEP 10: Mark invitation as used (if applicable)
+            // STEP 9: Mark invitation as used (if applicable)
             if (body.invitationToken) {
               const invitation =
                 await ctx.context.adapter.findOne<ExamInvitation>({
@@ -683,7 +596,7 @@ export const examPlugin = (options: ExamPluginOptions): BetterAuthPlugin => {
               }
             }
 
-            // STEP 11: Create exam session with SERVER-SIDE TIMING
+            // STEP 10: Create exam session with SERVER-SIDE TIMING
             const serverTime = new Date();
             const sessionId = ctx.context.generateId({ model: "examSession" });
 
@@ -710,7 +623,7 @@ export const examPlugin = (options: ExamPluginOptions): BetterAuthPlugin => {
               },
             });
 
-            // STEP 12: Return session with server time
+            // STEP 11: Return session with server time
             return ctx.json({
               sessionId,
               examId: body.examId,
@@ -740,7 +653,7 @@ export const examPlugin = (options: ExamPluginOptions): BetterAuthPlugin => {
       // GET SESSION STATUS (SERVER-SIDE TIME CHECK)
       // ============================================
       getSessionStatus: createAuthEndpoint(
-        "/exam/status",
+        "/exam-session/status",
         {
           method: "POST",
           use: [sessionMiddleware],
@@ -837,7 +750,7 @@ export const examPlugin = (options: ExamPluginOptions): BetterAuthPlugin => {
       // SUBMIT ANSWER
       // ============================================
       submitAnswer: createAuthEndpoint(
-        "/exam/submit-answer",
+        "/exam-session/submit-answer",
         {
           method: "POST",
           use: [sessionMiddleware],
@@ -918,7 +831,7 @@ export const examPlugin = (options: ExamPluginOptions): BetterAuthPlugin => {
               }
             }
 
-            // Create answer record - FIX: Pass options object to generateId
+            // Create answer record
             const answerId = ctx.context.generateId({ model: "examAnswer" });
             const now = new Date();
 
@@ -982,7 +895,7 @@ export const examPlugin = (options: ExamPluginOptions): BetterAuthPlugin => {
       // COMPLETE EXAM
       // ============================================
       completeExam: createAuthEndpoint(
-        "/exam/complete",
+        "/exam-session/complete",
         {
           method: "POST",
           use: [sessionMiddleware],
@@ -1068,7 +981,7 @@ export const examPlugin = (options: ExamPluginOptions): BetterAuthPlugin => {
       // TRACK VIOLATION
       // ============================================
       trackViolation: createAuthEndpoint(
-        "/exam/track-violation",
+        "/exam-session/track-violation",
         {
           method: "POST",
           use: [sessionMiddleware],
@@ -1101,7 +1014,7 @@ export const examPlugin = (options: ExamPluginOptions): BetterAuthPlugin => {
               return ctx.json({ recorded: false });
             }
 
-            // Create violation record - FIX: Pass options object to generateId
+            // Create violation record
             const violationId = ctx.context.generateId({
               model: "examViolation",
             });
