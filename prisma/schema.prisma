@@ -40,9 +40,12 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  sessions  Session[]
-  accounts  Account[]
-  twoFactor TwoFactor?
+  sessions           Session[]
+  accounts           Account[]
+  twoFactor          TwoFactor?
+  examSessions       ExamSession[]
+  invitations        ExamInvitation[] @relation("UserInvitations")
+  createdInvitations ExamInvitation[] @relation("CreatedInvitations")
 
   @@index([email])
   @@index([username])
@@ -166,7 +169,7 @@ model Question {
 
   // Relations
   options QuestionOption[]
-  exams   ExamQuestion[] // ✅ NEW: Relation to exams
+  exams   ExamQuestion[]
 
   // Indexes for performance
   @@index([examType, year, subject])
@@ -197,7 +200,7 @@ model QuestionOption {
 }
 
 // ============================================
-// EXAM MODELS - ✅ NEW
+// EXAM MODELS
 // ============================================
 
 model Exam {
@@ -215,7 +218,7 @@ model Exam {
   isPublic         Boolean   @default(false) @map("is_public")
   isFree           Boolean   @default(true) @map("is_free")
   status           String    @default("draft") // draft, published, archived
-  category         String? // mock, practice, official
+  category         String? // practice, test, recruitment, competition, challenge
   startDate        DateTime? @map("start_date")
   endDate          DateTime? @map("end_date")
 
@@ -231,8 +234,11 @@ model Exam {
   // Indexes for performance
   @@index([examType, year, subject])
   @@index([status])
+  @@index([category])
   @@index([createdBy])
   @@index([deletedAt])
+  @@index([startDate])
+  @@index([endDate])
   @@map("exams")
 }
 
@@ -252,6 +258,111 @@ model ExamQuestion {
   @@index([examId, orderIndex])
   @@index([questionId])
   @@map("exam_questions")
+}
+
+// ============================================
+// EXAM TAKING MODELS - Exam Plugin
+// ============================================
+
+model ExamSession {
+  id                  String    @id @default(cuid())
+  userId              String    @map("user_id")
+  examId              String    @map("exam_id")
+  examType            String    @map("exam_type") // practice, test, recruitment, competition, challenge
+  startedAt           DateTime  @map("started_at")
+  completedAt         DateTime? @map("completed_at")
+  timeLimit           Int?      @map("time_limit") // In minutes
+  configuredQuestions Int       @map("configured_questions")
+  shuffleQuestions    Boolean   @default(false) @map("shuffle_questions")
+  shuffleOptions      Boolean   @default(false) @map("shuffle_options")
+  status              String    @default("active") // active, completed, expired, abandoned
+  score               Float?
+  totalQuestions      Int       @map("total_questions")
+  answeredQuestions   Int       @default(0) @map("answered_questions")
+  violationCount      Int       @default(0) @map("violation_count")
+  questionOrder       String    @map("question_order") @db.Text // JSON array of question IDs
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answers    ExamAnswer[]
+  violations ExamViolation[]
+
+  // Indexes for performance
+  @@index([userId])
+  @@index([examId])
+  @@index([status])
+  @@index([userId, examId, status])
+  @@index([startedAt])
+  @@index([completedAt])
+  @@map("exam_sessions")
+}
+
+model ExamAnswer {
+  id               String   @id @default(cuid())
+  sessionId        String   @map("session_id")
+  questionId       String   @map("question_id")
+  selectedOptionId String?  @map("selected_option_id")
+  textAnswer       String?  @map("text_answer") @db.Text
+  isCorrect        Boolean? @map("is_correct")
+  timeSpent        Int      @map("time_spent") // In seconds
+  answeredAt       DateTime @map("answered_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  // Relations
+  session ExamSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  // Indexes
+  @@unique([sessionId, questionId]) // Prevent duplicate answers
+  @@index([sessionId])
+  @@index([questionId])
+  @@index([answeredAt])
+  @@map("exam_answers")
+}
+
+model ExamViolation {
+  id        String   @id @default(cuid())
+  sessionId String   @map("session_id")
+  type      String // tab_switch, window_blur, copy_attempt, paste_attempt, fullscreen_exit
+  timestamp DateTime
+  metadata  String?  @db.Text // JSON metadata
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  session ExamSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  // Indexes
+  @@index([sessionId])
+  @@index([type])
+  @@index([timestamp])
+  @@map("exam_violations")
+}
+
+model ExamInvitation {
+  id        String    @id @default(cuid())
+  examId    String    @map("exam_id")
+  userId    String?   @map("user_id") // Specific user invitation
+  email     String? // Email-based invitation (user not yet registered)
+  token     String    @unique // Unique access token
+  expiresAt DateTime? @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdBy String    @map("created_by") // Admin user ID
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  user    User? @relation("UserInvitations", fields: [userId], references: [id], onDelete: SetNull)
+  creator User  @relation("CreatedInvitations", fields: [createdBy], references: [id], onDelete: Cascade)
+
+  // Indexes
+  @@index([examId])
+  @@index([userId])
+  @@index([email])
+  @@index([token])
+  @@index([createdBy])
+  @@index([expiresAt])
+  @@index([usedAt])
+  @@map("exam_invitations")
 }
 
 enum Gender {
