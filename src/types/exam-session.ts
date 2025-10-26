@@ -224,6 +224,8 @@ export interface ViolationTrackingResult {
 
 export interface ServerTimeSync {
   success: boolean;
+  message?: string;
+  code?: string;
   serverTime: Date;
   remainingTime?: number;
   isExpired: boolean;
