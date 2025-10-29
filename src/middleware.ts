@@ -182,19 +182,14 @@ export function middleware(request: NextRequest) {
   // PROTECT EMAIL VERIFIED PAGE
   // =====================================================
   if (pathname === "/auth/email-verified") {
-    const url = request.nextUrl;
-    const token = url.searchParams.get("token");
-    const error = url.searchParams.get("error");
-
-    if (!token && !error) {
-      const registerUrl = new URL("/auth/register", request.url);
-      return NextResponse.redirect(registerUrl);
-    }
-
+    // Allow access to email-verified page
+    // Better Auth redirects here after processing verification
+    // The page component handles both success and error states
     const response = NextResponse.next();
-    if (token) {
-      response.cookies.delete("pending_verification");
-    }
+
+    // Clean up verification cookie on successful verification
+    response.cookies.delete("pending_verification");
+
     addSecurityHeaders(response);
     return response;
   }

@@ -10,6 +10,9 @@ export const metadata: Metadata = {
   description: "Export questions with advanced filtering and selection",
 };
 
+// Mark page as dynamic since it uses headers for authentication
+export const dynamic = "force-dynamic";
+
 export default async function BulkExportPage() {
   const filterOptions = await getExportFilterOptions();
 
