@@ -1,8 +1,7 @@
-import { Resend } from "resend";
+import nodemailer from "nodemailer";
+import type { Transporter } from "nodemailer";
 import { render } from "@react-email/render";
 import TwoFactorOTPEmail from "./templates/two-factor-otp";
-
-const resend = new Resend(process.env.RESEND_API_KEY || "re_development_key");
 
 interface EmailParams {
   to: string;
@@ -10,34 +9,57 @@ interface EmailParams {
   html: string;
 }
 
-async function sendEmail({ to, subject, html }: EmailParams): Promise<void> {
-  if (process.env.NODE_ENV === "development") {
-    console.log("=".repeat(80));
-    console.log("📧 EMAIL (Development Mode - Not Sent)");
-    console.log("=".repeat(80));
-    console.log("To:", to);
-    console.log("From:", process.env.EMAIL_FROM || "noreply@yourdomain.com");
-    console.log("Subject:", subject);
-    console.log("-".repeat(80));
-    console.log("HTML Content:");
-    console.log(html);
-    console.log("=".repeat(80));
-    return;
+// Create reusable transporter using Gmail
+function createTransporter(): Transporter {
+  const gmailUser = process.env.GMAIL_USER;
+  const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
+
+  if (!gmailUser || !gmailAppPassword) {
+    throw new Error(
+      "Gmail credentials not configured. Please set GMAIL_USER and GMAIL_APP_PASSWORD environment variables."
+    );
   }
 
-  if (!process.env.RESEND_API_KEY) {
-    throw new Error("RESEND_API_KEY is not configured");
-  }
+  return nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: gmailUser,
+      pass: gmailAppPassword,
+    },
+  });
+}
+
+async function sendEmail({ to, subject, html }: EmailParams): Promise<void> {
+  // Enhanced logging for both dev and prod
+  console.log("=".repeat(80));
+  console.log(
+    process.env.NODE_ENV === "development"
+      ? "📧 EMAIL (Development Mode - Sending via Gmail)"
+      : "📧 EMAIL (Production Mode - Sending via Gmail)"
+  );
+  console.log("=".repeat(80));
+  console.log("To:", to);
+  console.log("From:", process.env.GMAIL_USER);
+  console.log("Subject:", subject);
+  console.log("-".repeat(80));
 
   try {
-    await resend.emails.send({
-      from: process.env.EMAIL_FROM || "noreply@yourdomain.com",
+    const transporter = createTransporter();
+
+    const info = await transporter.sendMail({
+      from: `"EduSmart" <${process.env.GMAIL_USER}>`,
       to,
       subject,
       html,
     });
+
+    console.log("✅ Email sent successfully!");
+    console.log("Message ID:", info.messageId);
+    console.log("=".repeat(80));
   } catch (error) {
-    console.error("Error sending email:", error);
+    console.error("❌ Error sending email:");
+    console.error(error);
+    console.log("=".repeat(80));
     throw new Error("Failed to send email");
   }
 }
@@ -49,7 +71,6 @@ export async function sendVerificationEmail(
   // Detect email type based on URL pattern
   const isEmailChange = verificationUrl.includes("/change-email");
   const isAccountDeletion = verificationUrl.includes("/delete-account");
-  // const isEmailVerification = !isEmailChange && !isAccountDeletion;
 
   let subject: string;
   let heading: string;
@@ -163,10 +184,10 @@ export async function sendVerificationEmail(
     </html>
   `;
 
-  // Enhanced development logging
+  // Enhanced development logging with preview
   if (process.env.NODE_ENV === "development") {
     console.log("=".repeat(80));
-    console.log(`📧 EMAIL (Development Mode - Not Sent)`);
+    console.log(`📧 EMAIL PREVIEW (Development Mode)`);
     console.log("=".repeat(80));
     console.log(
       "Type:",
@@ -177,16 +198,12 @@ export async function sendVerificationEmail(
           : "✅ EMAIL VERIFICATION"
     );
     console.log("To:", email);
-    console.log("From:", process.env.EMAIL_FROM || "noreply@yourdomain.com");
+    console.log("From:", process.env.GMAIL_USER || "not-configured");
     console.log("Subject:", subject);
     console.log("-".repeat(80));
     console.log("Verification URL:");
     console.log(verificationUrl);
     console.log("-".repeat(80));
-    console.log("HTML Content:");
-    console.log(html);
-    console.log("=".repeat(80));
-    return;
   }
 
   await sendEmail({
@@ -195,6 +212,7 @@ export async function sendVerificationEmail(
     html,
   });
 }
+
 export async function sendPasswordResetEmail(
   email: string,
   resetUrl: string
@@ -232,12 +250,20 @@ export async function sendPasswordResetEmail(
             
             <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
             
-            <p style="color: #95a5a6; font-size: 12px;">
-              If you didn't request a password reset, please ignore this email. Your password will remain unchanged.
-            </p>
+            <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0;">
+              <p style="margin: 0; color: #856404; font-size: 14px;">
+                <strong>⚠️ Security Notice:</strong>
+              </p>
+              <ul style="margin: 10px 0; color: #856404; font-size: 13px; padding-left: 20px;">
+                <li>This link will expire in <strong>1 hour</strong></li>
+                <li>This link can only be used <strong>once</strong></li>
+                <li>If you didn't request this, please ignore this email</li>
+                <li>Never share this link with anyone</li>
+              </ul>
+            </div>
             
             <p style="color: #95a5a6; font-size: 12px;">
-              This reset link will expire in 1 hour for security reasons.
+              If you didn't request a password reset, please secure your account immediately by changing your password after logging in.
             </p>
           </div>
           

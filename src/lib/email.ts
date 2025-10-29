@@ -1,7 +1,5 @@
-import { Resend } from "resend";
-
-// Initialize Resend with API key (works in both dev and prod)
-const resend = new Resend(process.env.RESEND_API_KEY || "re_development_key");
+import nodemailer from "nodemailer";
+import type { Transporter } from "nodemailer";
 
 interface EmailParams {
   to: string;
@@ -9,37 +7,63 @@ interface EmailParams {
   html: string;
 }
 
-async function sendEmail({ to, subject, html }: EmailParams): Promise<void> {
-  // Log to console in development mode
-  if (process.env.NODE_ENV === "development") {
-    console.log("=".repeat(80));
-    console.log("📧 EMAIL (Development Mode - Not Sent)");
-    console.log("=".repeat(80));
-    console.log("To:", to);
-    console.log("From:", process.env.EMAIL_FROM || "noreply@yourdomain.com");
-    console.log("Subject:", subject);
-    console.log("-".repeat(80));
-    console.log("HTML Content:");
-    console.log(html);
-    console.log("=".repeat(80));
-    return;
+// Create reusable transporter using Gmail
+function createTransporter(): Transporter {
+  const gmailUser = process.env.GMAIL_USER;
+  const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
+
+  if (!gmailUser || !gmailAppPassword) {
+    throw new Error(
+      "Gmail credentials not configured. Please set GMAIL_USER and GMAIL_APP_PASSWORD environment variables."
+    );
   }
 
-  // Send actual email in production
-  if (!process.env.RESEND_API_KEY) {
-    throw new Error("RESEND_API_KEY is not configured");
-  }
+  return nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: gmailUser,
+      pass: gmailAppPassword,
+    },
+  });
+}
+
+async function sendEmail({ to, subject, html }: EmailParams): Promise<void> {
+  console.log("=".repeat(80));
+  console.log("📧 EMAIL ATTEMPT");
+  console.log("=".repeat(80));
+  console.log("Environment:", process.env.NODE_ENV);
+  console.log("To:", to);
+  console.log("From:", process.env.GMAIL_USER);
+  console.log("Subject:", subject);
+  console.log("Gmail User Set:", !!process.env.GMAIL_USER);
+  console.log("Gmail App Password Set:", !!process.env.GMAIL_APP_PASSWORD);
+  console.log("-".repeat(80));
 
   try {
-    await resend.emails.send({
-      from: process.env.EMAIL_FROM || "noreply@yourdomain.com",
+    console.log("Creating transporter...");
+    const transporter = createTransporter();
+
+    console.log("Sending email...");
+    const info = await transporter.sendMail({
+      from: `"EduSmart" <${process.env.GMAIL_USER}>`,
       to,
       subject,
       html,
     });
+
+    console.log("✅ Email sent successfully!");
+    console.log("Message ID:", info.messageId);
+    console.log("Response:", info.response);
+    console.log("=".repeat(80));
   } catch (error) {
-    console.error("Error sending email:", error);
-    throw new Error("Failed to send email");
+    console.error("❌ Error sending email:");
+    console.error("Error details:", error);
+    if (error instanceof Error) {
+      console.error("Error message:", error.message);
+      console.error("Error stack:", error.stack);
+    }
+    console.log("=".repeat(80));
+    throw error;
   }
 }
 
@@ -105,16 +129,14 @@ export async function sendVerificationEmail(
 }
 
 /**
- * ✅ ADDED: Send password reset email with secure token link
+ * Send password reset email with secure token link
  *
  * @param email - User's email address
  * @param resetUrl - Complete reset URL with token
- * @param token - Reset token (for logging/tracking purposes)
  */
 export async function sendPasswordResetEmail(
   email: string,
   resetUrl: string
-  // token: string
 ): Promise<void> {
   const html = `
     <!DOCTYPE html>
