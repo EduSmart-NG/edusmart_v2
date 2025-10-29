@@ -132,7 +132,7 @@ export default function VerifyEmailClient({
   const isResendDisabled = countdown > 0 || isResending;
 
   return (
-    <div className="container flex h-screen w-screen flex-col items-center justify-center">
+    <div className="container flex h-screen w-screen flex-col items-center justify-center px-4">
       <div className="mx-auto flex w-full flex-col justify-center space-y-6 sm:w-[450px]">
         <div className="flex flex-col space-y-2 text-center">
           <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-primary/10">

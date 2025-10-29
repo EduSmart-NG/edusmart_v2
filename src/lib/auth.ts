@@ -20,7 +20,7 @@ export const auth = betterAuth({
     provider: "mysql",
   }),
 
-  basePath: "/api/v1/auth",
+  basePath: "/auth",
 
   secret: process.env.BETTER_AUTH_SECRET,
 
