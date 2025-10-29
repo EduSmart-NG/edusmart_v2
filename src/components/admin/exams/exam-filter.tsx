@@ -42,7 +42,7 @@ type SortByOption = "createdAt" | "title" | "year" | "status";
 // COMPONENT
 // ============================================
 
-export function ExamsFilters() {
+export const ExamsFilters = React.memo(function ExamsFilters() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -60,15 +60,31 @@ export function ExamsFilters() {
   // Local state for search input (controlled)
   const [searchValue, setSearchValue] = React.useState(currentSearch);
 
-  // Check if any filters are active
-  const hasActiveFilters =
-    currentSearch ||
-    currentStatus !== "all" ||
-    currentExamType !== "all" ||
-    currentSubject !== "all" ||
-    currentYear !== "all" ||
-    currentSortBy !== "createdAt" ||
-    currentSortOrder !== "desc";
+  // Sync search value with URL changes
+  React.useEffect(() => {
+    setSearchValue(currentSearch);
+  }, [currentSearch]);
+
+  // Check if any filters are active - Memoized for performance
+  const hasActiveFilters = React.useMemo(
+    () =>
+      currentSearch ||
+      currentStatus !== "all" ||
+      currentExamType !== "all" ||
+      currentSubject !== "all" ||
+      currentYear !== "all" ||
+      currentSortBy !== "createdAt" ||
+      currentSortOrder !== "desc",
+    [
+      currentSearch,
+      currentStatus,
+      currentExamType,
+      currentSubject,
+      currentYear,
+      currentSortBy,
+      currentSortOrder,
+    ]
+  );
 
   // ============================================
   // URL UPDATE HELPER
@@ -110,39 +126,60 @@ export function ExamsFilters() {
   // HANDLERS
   // ============================================
 
-  const handleSearchChange = (value: string) => {
-    setSearchValue(value);
-    debouncedSearch(value);
-  };
+  const handleSearchChange = React.useCallback(
+    (value: string) => {
+      setSearchValue(value);
+      debouncedSearch(value);
+    },
+    [debouncedSearch]
+  );
 
-  const handleStatusChange = (value: string) => {
-    updateURL({ status: value === "all" ? null : value });
-  };
+  const handleStatusChange = React.useCallback(
+    (value: string) => {
+      updateURL({ status: value === "all" ? null : value });
+    },
+    [updateURL]
+  );
 
-  const handleExamTypeChange = (value: string) => {
-    updateURL({ exam_type: value === "all" ? null : value });
-  };
+  const handleExamTypeChange = React.useCallback(
+    (value: string) => {
+      updateURL({ exam_type: value === "all" ? null : value });
+    },
+    [updateURL]
+  );
 
-  const handleSubjectChange = (value: string) => {
-    updateURL({ subject: value === "all" ? null : value });
-  };
+  const handleSubjectChange = React.useCallback(
+    (value: string) => {
+      updateURL({ subject: value === "all" ? null : value });
+    },
+    [updateURL]
+  );
 
-  const handleYearChange = (value: string) => {
-    updateURL({ year: value === "all" ? null : value });
-  };
+  const handleYearChange = React.useCallback(
+    (value: string) => {
+      updateURL({ year: value === "all" ? null : value });
+    },
+    [updateURL]
+  );
 
-  const handleSortByChange = (value: SortByOption) => {
-    updateURL({ sort_by: value });
-  };
+  const handleSortByChange = React.useCallback(
+    (value: SortByOption) => {
+      updateURL({ sort_by: value });
+    },
+    [updateURL]
+  );
 
-  const handleSortOrderChange = (value: string) => {
-    updateURL({ sort_order: value });
-  };
+  const handleSortOrderChange = React.useCallback(
+    (value: string) => {
+      updateURL({ sort_order: value });
+    },
+    [updateURL]
+  );
 
-  const handleResetFilters = () => {
+  const handleResetFilters = React.useCallback(() => {
     setSearchValue("");
     router.push(pathname, { scroll: false });
-  };
+  }, [pathname, router]);
 
   // ============================================
   // RENDER
@@ -261,4 +298,4 @@ export function ExamsFilters() {
       </div>
     </div>
   );
-}
+});

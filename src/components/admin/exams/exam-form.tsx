@@ -37,11 +37,8 @@ import {
   SUBJECTS,
   YEARS,
 } from "@/lib/utils/exam";
-import {
-  createExam,
-  updateExam,
-  searchQuestions,
-} from "@/lib/actions/exam-upload";
+import { searchQuestions } from "@/lib/actions/exam-upload";
+import { useCreateExam, useUpdateExam } from "@/hooks/use-exams";
 import type { QuestionDecrypted } from "@/types/exam-api";
 
 // ============================================
@@ -110,7 +107,6 @@ export default function CreateExamForm({
 }: CreateExamFormProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [isLoading, setIsLoading] = useState(false);
   const [showQuestionSearch, setShowQuestionSearch] = useState(false);
   const [isLoadingQuestions, setIsLoadingQuestions] = useState(false);
 
@@ -120,6 +116,23 @@ export default function CreateExamForm({
     isLoading: isRecaptchaLoading,
     error: recaptchaError,
   } = useRecaptchaToken();
+
+  // TanStack Query mutations
+  const createMutation = useCreateExam({
+    onSuccess: (data) => {
+      if (data.success) {
+        // Navigation is handled in handleSubmit based on addAnother flag
+      }
+    },
+  });
+
+  const updateMutation = useUpdateExam({
+    onSuccess: (data) => {
+      if (data.success) {
+        // Navigation is handled in handleSubmit based on addAnother flag
+      }
+    },
+  });
 
   const [formData, setFormData] = useState<FormData>(() => ({
     exam_type: initialData.exam_type || "",
@@ -308,8 +321,6 @@ export default function CreateExamForm({
         return;
       }
 
-      setIsLoading(true);
-
       try {
         const action = isEditing ? "exam_update" : "exam_create";
         const recaptchaToken = await generateToken(action);
@@ -318,56 +329,65 @@ export default function CreateExamForm({
           toast.error(
             recaptchaError || "Failed to verify reCAPTCHA. Please try again."
           );
-          setIsLoading(false);
           return;
         }
 
+        // Prepare FormData for the mutation
         const formDataToSend = new FormData();
+
+        // Add all form fields to FormData
         Object.entries(formData).forEach(([key, value]) => {
-          formDataToSend.append(key, String(value));
+          if (value !== null && value !== undefined && value !== "") {
+            formDataToSend.append(key, value.toString());
+          }
         });
+
+        // Add question IDs as JSON string (server expects JSON.parse)
         formDataToSend.append(
           "question_ids",
           JSON.stringify(selectedQuestions.map((q) => q.id))
         );
 
-        const result =
-          isEditing && examId
-            ? await updateExam(examId, formDataToSend, recaptchaToken)
-            : await createExam(formDataToSend, recaptchaToken);
-
-        if (result.success) {
-          toast.success(result.message, {
-            description: `Exam ${isEditing ? "updated" : "created"} successfully`,
-            duration: 5000,
+        // Call the appropriate mutation
+        if (isEditing && examId) {
+          const result = await updateMutation.mutateAsync({
+            examId,
+            data: formDataToSend,
+            recaptchaToken,
           });
 
-          startTransition(() => {
-            if (addAnother) {
-              router.push("/cp/admin-dashboard/exams/new");
-            } else {
-              router.push("/cp/admin-dashboard/exams/");
-            }
-          });
+          if (result.success) {
+            startTransition(() => {
+              if (addAnother) {
+                router.push("/cp/admin-dashboard/exams/new");
+              } else {
+                router.push("/cp/admin-dashboard/exams/");
+              }
+            });
+          } else if (result.errors) {
+            setErrors(result.errors);
+          }
         } else {
-          toast.error(result.message, {
-            description: result.errors
-              ? Object.entries(result.errors)
-                  .map(([field, msg]) => `${field}: ${msg}`)
-                  .join(", ")
-              : undefined,
-            duration: 5000,
+          const result = await createMutation.mutateAsync({
+            data: formDataToSend,
+            recaptchaToken,
           });
 
-          if (result.errors) {
+          if (result.success) {
+            startTransition(() => {
+              if (addAnother) {
+                router.push("/cp/admin-dashboard/exams/new");
+              } else {
+                router.push("/cp/admin-dashboard/exams/");
+              }
+            });
+          } else if (result.errors) {
             setErrors(result.errors);
           }
         }
       } catch (error) {
         console.error("Error saving exam:", error);
-        toast.error("An unexpected error occurred. Please try again.");
-      } finally {
-        setIsLoading(false);
+        // The mutation hooks already handle error toasts
       }
     },
     [
@@ -378,6 +398,8 @@ export default function CreateExamForm({
       formData,
       selectedQuestions,
       examId,
+      createMutation,
+      updateMutation,
       router,
     ]
   );
@@ -393,7 +415,11 @@ export default function CreateExamForm({
     }
   }, [questionFilters, showQuestionSearch, fetchQuestions]);
 
-  const isSubmitting = isLoading || isRecaptchaLoading || isPending;
+  const isSubmitting =
+    createMutation.isPending ||
+    updateMutation.isPending ||
+    isRecaptchaLoading ||
+    isPending;
 
   return (
     <div>

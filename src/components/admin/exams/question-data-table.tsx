@@ -2,7 +2,10 @@
 
 import * as React from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
+import { questionKeys } from "@/hooks/use-questions";
+import { getQuestionById } from "@/lib/actions/question-upload";
 import {
   MoreHorizontal,
   FileQuestion,
@@ -76,6 +79,16 @@ const RowActions = React.memo(function RowActions({
   question: QuestionDecrypted;
 }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
+
+  // Prefetch question details on hover for instant navigation
+  const handlePrefetch = React.useCallback(() => {
+    queryClient.prefetchQuery({
+      queryKey: questionKeys.detail(question.id),
+      queryFn: () => getQuestionById(question.id),
+      staleTime: 60 * 1000, // 1 minute
+    });
+  }, [queryClient, question.id]);
 
   return (
     <DropdownMenu>
@@ -90,6 +103,7 @@ const RowActions = React.memo(function RowActions({
         <DropdownMenuSeparator />
 
         <DropdownMenuItem
+          onMouseEnter={handlePrefetch}
           onClick={() =>
             router.push(`/cp/admin-dashboard/questions/${question.id}`)
           }
@@ -219,15 +233,16 @@ const QuestionRow = React.memo(function QuestionRow({
 }: {
   question: QuestionDecrypted;
 }) {
-  const formattedDate = React.useMemo(
-    () => format(new Date(question.createdAt), "MMM d, yyyy"),
-    [question.createdAt]
-  );
+  const queryClient = useQueryClient();
 
-  const formattedTime = React.useMemo(
-    () => format(new Date(question.createdAt), "h:mm a"),
-    [question.createdAt]
-  );
+  // Optimize date formatting - create Date object once
+  const { formattedDate, formattedTime } = React.useMemo(() => {
+    const date = new Date(question.createdAt);
+    return {
+      formattedDate: format(date, "MMM d, yyyy"),
+      formattedTime: format(date, "h:mm a"),
+    };
+  }, [question.createdAt]);
 
   const questionTypeFormatted = React.useMemo(
     () =>
@@ -245,10 +260,22 @@ const QuestionRow = React.memo(function QuestionRow({
     [question.difficultyLevel]
   );
 
+  // Prefetch question details on hover for instant navigation
+  const handlePrefetch = React.useCallback(() => {
+    queryClient.prefetchQuery({
+      queryKey: questionKeys.detail(question.id),
+      queryFn: () => getQuestionById(question.id),
+      staleTime: 60 * 1000, // 1 minute
+    });
+  }, [queryClient, question.id]);
+
   return (
     <TableRow>
       <TableCell className="w-[300px]">
-        <div className="max-w-[300px] overflow-hidden">
+        <div
+          className="max-w-[300px] overflow-hidden"
+          onMouseEnter={handlePrefetch}
+        >
           <Link
             href={`/cp/admin-dashboard/questions/${question.id}`}
             className="text-sm font-medium truncate hover:underline"

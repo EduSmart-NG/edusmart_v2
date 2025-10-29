@@ -2,7 +2,10 @@
 
 import * as React from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
+import { examKeys } from "@/hooks/use-exams";
+import { getExamById } from "@/lib/actions/exam-upload";
 import {
   MoreHorizontal,
   FileText,
@@ -93,7 +96,17 @@ function getStatusIcon(status: string) {
 
 function RowActions({ exam }: { exam: AdminExam }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [showDeleteDialog, setShowDeleteDialog] = React.useState(false);
+
+  // Prefetch exam details on hover for instant navigation
+  const handlePrefetch = React.useCallback(() => {
+    queryClient.prefetchQuery({
+      queryKey: examKeys.detail(exam.id),
+      queryFn: () => getExamById(exam.id),
+      staleTime: 60 * 1000, // 1 minute
+    });
+  }, [queryClient, exam.id]);
 
   const handleEdit = () => {
     router.push(`/cp/admin-dashboard/exams/${exam.id}`);
@@ -121,7 +134,7 @@ function RowActions({ exam }: { exam: AdminExam }) {
           <DropdownMenuLabel>Actions</DropdownMenuLabel>
           <DropdownMenuSeparator />
 
-          <DropdownMenuItem onClick={handleEdit}>
+          <DropdownMenuItem onMouseEnter={handlePrefetch} onClick={handleEdit}>
             <Edit className="mr-2 h-4 w-4" />
             Edit
           </DropdownMenuItem>
@@ -255,6 +268,98 @@ function Pagination({
 }
 
 // ============================================
+// EXAM ROW COMPONENT
+// ============================================
+
+const ExamRow = React.memo(function ExamRow({ exam }: { exam: AdminExam }) {
+  const queryClient = useQueryClient();
+
+  // Optimize date formatting - create Date object once
+  const { formattedDate, formattedTime } = React.useMemo(() => {
+    const date = new Date(exam.createdAt);
+    return {
+      formattedDate: format(date, "MMM d, yyyy"),
+      formattedTime: format(date, "h:mm a"),
+    };
+  }, [exam.createdAt]);
+
+  // Prefetch exam details on hover for instant navigation
+  const handlePrefetch = React.useCallback(() => {
+    queryClient.prefetchQuery({
+      queryKey: examKeys.detail(exam.id),
+      queryFn: () => getExamById(exam.id),
+      staleTime: 60 * 1000, // 1 minute
+    });
+  }, [queryClient, exam.id]);
+
+  const StatusIcon = getStatusIcon(exam.status);
+  const hours = Math.floor(exam.duration / 60);
+  const minutes = exam.duration % 60;
+  let durationText = "";
+  if (hours > 0) durationText += `${hours}h `;
+  if (minutes > 0 || hours === 0) durationText += `${minutes}m`;
+
+  return (
+    <TableRow>
+      {/* Title - Clickable with prefetch */}
+      <TableCell>
+        <div onMouseEnter={handlePrefetch}>
+          <Link
+            href={`/cp/admin-dashboard/exams/${exam.id}`}
+            className="flex flex-col hover:underline"
+          >
+            <span className="font-medium">{exam.title}</span>
+            <Badge variant="outline" className="mt-1 w-fit text-xs">
+              {exam.examType}
+            </Badge>
+          </Link>
+        </div>
+      </TableCell>
+
+      {/* Subject */}
+      <TableCell>{exam.subject}</TableCell>
+
+      {/* Year */}
+      <TableCell>
+        <span className="font-medium">{exam.year}</span>
+      </TableCell>
+
+      {/* Status */}
+      <TableCell>
+        <Badge variant={getStatusVariant(exam.status)}>
+          <StatusIcon className="mr-1 h-3 w-3" />
+          {exam.status.charAt(0).toUpperCase() + exam.status.slice(1)}
+        </Badge>
+      </TableCell>
+
+      {/* Questions */}
+      <TableCell>
+        <div className="flex items-center gap-1">
+          <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="font-medium">{exam.questionCount}</span>
+        </div>
+      </TableCell>
+
+      {/* Duration */}
+      <TableCell>{durationText.trim()}</TableCell>
+
+      {/* Created */}
+      <TableCell>
+        <div className="flex flex-col">
+          <span className="text-sm">{formattedDate}</span>
+          <span className="text-xs text-muted-foreground">{formattedTime}</span>
+        </div>
+      </TableCell>
+
+      {/* Actions */}
+      <TableCell className="text-right">
+        <RowActions exam={exam} />
+      </TableCell>
+    </TableRow>
+  );
+});
+
+// ============================================
 // MAIN COMPONENT
 // ============================================
 
@@ -298,76 +403,9 @@ export function ExamsTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {exams.map((exam) => {
-              const StatusIcon = getStatusIcon(exam.status);
-              const hours = Math.floor(exam.duration / 60);
-              const minutes = exam.duration % 60;
-              let durationText = "";
-              if (hours > 0) durationText += `${hours}h `;
-              if (minutes > 0 || hours === 0) durationText += `${minutes}m`;
-
-              return (
-                <TableRow key={exam.id}>
-                  {/* Title - Clickable */}
-                  <TableCell>
-                    <Link
-                      href={`/cp/admin-dashboard/exams/${exam.id}`}
-                      className="flex flex-col hover:underline"
-                    >
-                      <span className="font-medium">{exam.title}</span>
-                      <Badge variant="outline" className="mt-1 w-fit text-xs">
-                        {exam.examType}
-                      </Badge>
-                    </Link>
-                  </TableCell>
-
-                  {/* Subject */}
-                  <TableCell>{exam.subject}</TableCell>
-
-                  {/* Year */}
-                  <TableCell>
-                    <span className="font-medium">{exam.year}</span>
-                  </TableCell>
-
-                  {/* Status */}
-                  <TableCell>
-                    <Badge variant={getStatusVariant(exam.status)}>
-                      <StatusIcon className="mr-1 h-3 w-3" />
-                      {exam.status.charAt(0).toUpperCase() +
-                        exam.status.slice(1)}
-                    </Badge>
-                  </TableCell>
-
-                  {/* Questions */}
-                  <TableCell>
-                    <div className="flex items-center gap-1">
-                      <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span className="font-medium">{exam.questionCount}</span>
-                    </div>
-                  </TableCell>
-
-                  {/* Duration */}
-                  <TableCell>{durationText.trim()}</TableCell>
-
-                  {/* Created */}
-                  <TableCell>
-                    <div className="flex flex-col">
-                      <span className="text-sm">
-                        {format(new Date(exam.createdAt), "MMM d, yyyy")}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {format(new Date(exam.createdAt), "h:mm a")}
-                      </span>
-                    </div>
-                  </TableCell>
-
-                  {/* Actions */}
-                  <TableCell className="text-right">
-                    <RowActions exam={exam} />
-                  </TableCell>
-                </TableRow>
-              );
-            })}
+            {exams.map((exam) => (
+              <ExamRow key={exam.id} exam={exam} />
+            ))}
           </TableBody>
         </Table>
       </div>

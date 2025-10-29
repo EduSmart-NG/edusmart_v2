@@ -1,98 +1,50 @@
-import { notFound } from "next/navigation";
 import { Metadata } from "next";
-import CreateExamForm from "@/components/admin/exams/exam-form";
+import { notFound } from "next/navigation";
+import { EditExamPageContent } from "@/components/admin/exams/edit-exam-page-content";
 import { getExamById } from "@/lib/actions/exam-upload";
 
 // ============================================
-// TYPES
-// ============================================
-
-interface PageProps {
-  params: Promise<{
-    id: string;
-  }>;
-}
-
-// ============================================
-// METADATA GENERATION
+// METADATA
 // ============================================
 
 export async function generateMetadata({
   params,
-}: PageProps): Promise<Metadata> {
-  const { id } = await params;
+}: {
+  params: { id: string };
+}): Promise<Metadata> {
+  try {
+    const result = await getExamById(params.id);
 
-  // Fetch exam for metadata
-  const result = await getExamById(id);
+    if (!result.success || !result.data) {
+      notFound();
+    }
 
-  if (!result.success || !result.data) {
+    const examTitle = result.data.exam.title;
     return {
-      title: "Exam Not Found | Admin Dashboard",
-      description: "The requested exam could not be found",
+      title: `${examTitle}`,
+      description: `Edit ${examTitle} exam details and settings`,
     };
+  } catch (error) {
+    console.log("Error fetching exam for metadata:", error);
+    notFound();
   }
-
-  const { exam } = result.data;
-
-  return {
-    title: `${exam.title.charAt(0).toUpperCase() + exam.title.slice(1)}`,
-    description: `Edit exam: ${exam.title} - ${exam.examType} ${exam.subject} ${exam.year}`,
-  };
 }
 
 // ============================================
 // PAGE COMPONENT
 // ============================================
 
-export default async function ExamDetailPage({ params }: PageProps) {
-  const { id } = await params;
+export default async function ExamDetailPage({
+  params,
+}: {
+  params: { id: string };
+}) {
+  // Verify exam exists before rendering
+  const result = await getExamById(params.id);
 
-  // Fetch exam data
-  const result = await getExamById(id);
-
-  // Handle not found
   if (!result.success || !result.data) {
     notFound();
   }
 
-  const { exam } = result.data;
-
-  // Transform exam data to form format
-  const initialData = {
-    exam_type: exam.examType,
-    subject: exam.subject,
-    year: exam.year.toString(),
-    title: exam.title,
-    description: exam.description || "",
-    duration: exam.duration.toString(),
-    passing_score: exam.passingScore?.toString() || "",
-    max_attempts: exam.maxAttempts?.toString() || "",
-    shuffle_questions: exam.shuffleQuestions,
-    randomize_options: exam.randomizeOptions,
-    is_public: exam.isPublic,
-    is_free: exam.isFree,
-    status: exam.status,
-    category: exam.category || "",
-    start_date: exam.startDate ? exam.startDate.toISOString() : "",
-    end_date: exam.endDate ? exam.endDate.toISOString() : "",
-    questions: exam.questions,
-  };
-
-  return (
-    <div className="container mx-auto py-8">
-      {/* Page Header */}
-      <div className="mb-6">
-        <p className="text-muted-foreground mt-2">
-          {exam.examType} • {exam.subject} • {exam.year}
-        </p>
-      </div>
-
-      {/* Edit Form */}
-      <CreateExamForm
-        initialData={initialData}
-        isEditing={true}
-        examId={exam.id}
-      />
-    </div>
-  );
+  return <EditExamPageContent />;
 }
