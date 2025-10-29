@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,7 +27,7 @@ import {
   YEARS,
 } from "@/lib/utils/exam";
 import { AddQuestionFormProps } from "@/types/question";
-import { updateQuestion, uploadQuestion } from "@/lib/actions/question-upload";
+import { useCreateQuestion, useUpdateQuestion } from "@/hooks/use-questions";
 import type { QuestionUploadInput } from "@/lib/validations/question";
 
 export default function AddQuestionForm({
@@ -35,7 +36,102 @@ export default function AddQuestionForm({
   isEditing = false,
   questionId,
 }: AddQuestionFormProps) {
-  const [isLoading, setIsLoading] = useState(false);
+  const router = useRouter();
+
+  // TanStack Query mutations
+  const createMutation = useCreateQuestion({
+    onSuccess: (data) => {
+      if (data.success) {
+        // Call custom onSubmit if provided (for backward compatibility)
+        if (onSubmit) {
+          const legacyQuestionData = {
+            exam_type: formData.exam_type,
+            year: parseInt(formData.year),
+            subject: formData.subject,
+            question_type: formData.question_type,
+            question_text: formData.question_text,
+            question_image: questionImage?.name || "",
+            options: options.map((opt) => ({
+              option_text: opt.option_text,
+              option_image:
+                opt.option_image?.name || opt.option_image_preview || "",
+              is_correct: opt.is_correct,
+            })),
+            question_point: parseFloat(formData.question_point),
+            answer_explanation: formData.answer_explanation || "",
+            difficulty_level: formData.difficulty_level,
+            tags: formData.tags
+              ? formData.tags
+                  .split(",")
+                  .map((tag) => tag.trim())
+                  .filter(Boolean)
+              : [],
+            time_limit: formData.time_limit
+              ? parseInt(formData.time_limit)
+              : null,
+            language: "en",
+          };
+
+          try {
+            onSubmit(legacyQuestionData, false);
+          } catch (error) {
+            console.error("Legacy onSubmit handler error:", error);
+          }
+        }
+
+        // Navigate back to questions list
+        router.push("/cp/admin-dashboard/questions");
+      }
+    },
+  });
+
+  const updateMutation = useUpdateQuestion({
+    onSuccess: (data) => {
+      if (data.success && questionId) {
+        // Call custom onSubmit if provided (for backward compatibility)
+        if (onSubmit) {
+          const legacyQuestionData = {
+            exam_type: formData.exam_type,
+            year: parseInt(formData.year),
+            subject: formData.subject,
+            question_type: formData.question_type,
+            question_text: formData.question_text,
+            question_image: questionImage?.name || "",
+            options: options.map((opt) => ({
+              option_text: opt.option_text,
+              option_image:
+                opt.option_image?.name || opt.option_image_preview || "",
+              is_correct: opt.is_correct,
+            })),
+            question_point: parseFloat(formData.question_point),
+            answer_explanation: formData.answer_explanation || "",
+            difficulty_level: formData.difficulty_level,
+            tags: formData.tags
+              ? formData.tags
+                  .split(",")
+                  .map((tag) => tag.trim())
+                  .filter(Boolean)
+              : [],
+            time_limit: formData.time_limit
+              ? parseInt(formData.time_limit)
+              : null,
+            language: "en",
+          };
+
+          try {
+            onSubmit(legacyQuestionData, false);
+          } catch (error) {
+            console.error("Legacy onSubmit handler error:", error);
+          }
+        }
+
+        // Navigate back to questions list
+        router.push("/cp/admin-dashboard/questions");
+      }
+    },
+  });
+
+  const isLoading = createMutation.isPending || updateMutation.isPending;
   const [questionImage, setQuestionImage] = useState<File | null>(null);
   const [questionImagePreview, setQuestionImagePreview] = useState<string>(
     initialData.question_image || ""
@@ -356,8 +452,6 @@ export default function AddQuestionForm({
       return;
     }
 
-    setIsLoading(true);
-
     try {
       // ============================================
       // STEP 1: PREPARE QUESTION DATA
@@ -413,159 +507,24 @@ export default function AddQuestionForm({
       });
 
       // ============================================
-      // STEP 3: CALL SERVER ACTION (CREATE OR UPDATE)
+      // STEP 3: CALL TANSTACK QUERY MUTATION
       // ============================================
-      const result =
-        isEditing && questionId
-          ? await updateQuestion(questionId, formDataToSend)
-          : await uploadQuestion(formDataToSend);
-
-      // ============================================
-      // STEP 4: HANDLE RESPONSE
-      // ============================================
-      if (result.success) {
-        // Success!
-        toast.success(
-          isEditing
-            ? "Question updated successfully!"
-            : "Question uploaded successfully!",
-          {
-            description: `Question ID: ${result.data?.questionId}`,
-            duration: 5000,
-          }
-        );
-
-        // Call custom onSubmit if provided (for backward compatibility)
-        if (onSubmit) {
-          const legacyQuestionData = {
-            exam_type: formData.exam_type,
-            year: parseInt(formData.year),
-            subject: formData.subject,
-            question_type: formData.question_type,
-            question_text: formData.question_text,
-            question_image: questionImage?.name || "",
-            options: options.map((opt) => ({
-              option_text: opt.option_text,
-              option_image:
-                opt.option_image?.name || opt.option_image_preview || "",
-              is_correct: opt.is_correct,
-            })),
-            question_point: parseFloat(formData.question_point),
-            answer_explanation: formData.answer_explanation || "",
-            difficulty_level: formData.difficulty_level,
-            tags: formData.tags
-              ? formData.tags
-                  .split(",")
-                  .map((tag) => tag.trim())
-                  .filter(Boolean)
-              : [],
-            time_limit: formData.time_limit
-              ? parseInt(formData.time_limit)
-              : null,
-            language: "en",
-          };
-
-          try {
-            await onSubmit(legacyQuestionData, addAnother);
-          } catch (error) {
-            console.error("Legacy onSubmit handler error:", error);
-          }
-        }
-
-        // Reset form if adding another
-        if (addAnother) {
-          resetForm();
-        }
+      if (isEditing && questionId) {
+        await updateMutation.mutateAsync({
+          questionId,
+          formData: formDataToSend,
+        });
       } else {
-        // Error occurred
-        console.error(isEditing ? "Update failed:" : "Upload failed:", result);
+        await createMutation.mutateAsync(formDataToSend);
+      }
 
-        // Handle specific error codes
-        switch (result.code) {
-          case "NO_SESSION":
-            toast.error("Authentication required", {
-              description: "Please sign in to continue.",
-              duration: 5000,
-            });
-            break;
-
-          case "FORBIDDEN":
-            toast.error("Access denied", {
-              description: result.message,
-              duration: 5000,
-            });
-            break;
-
-          case "QUESTION_NOT_FOUND":
-            toast.error("Question not found", {
-              description: "The question you're trying to edit doesn't exist.",
-              duration: 5000,
-            });
-            break;
-
-          case "RATE_LIMIT_EXCEEDED":
-            toast.error("Rate limit exceeded", {
-              description: result.message,
-              duration: 8000,
-            });
-            break;
-
-          case "VALIDATION_ERROR":
-            toast.error("Validation failed", {
-              description: "Please check your input and try again",
-              duration: 5000,
-            });
-
-            if (result.errors) {
-              setErrors(result.errors);
-
-              const firstErrorField = Object.keys(result.errors)[0];
-              const errorElement = document.getElementById(firstErrorField);
-              if (errorElement) {
-                errorElement.scrollIntoView({
-                  behavior: "smooth",
-                  block: "center",
-                });
-              }
-            }
-            break;
-
-          case "UPLOAD_FAILED":
-            toast.error("File upload failed", {
-              description: result.message,
-              duration: 5000,
-            });
-            break;
-
-          case "DATABASE_ERROR":
-            toast.error("Database error", {
-              description: `Failed to ${isEditing ? "update" : "save"} question. Please try again.`,
-              duration: 5000,
-            });
-            break;
-
-          case "INTERNAL_ERROR":
-            toast.error("Server error", {
-              description: "An unexpected error occurred. Please try again.",
-              duration: 5000,
-            });
-            break;
-
-          default:
-            toast.error(isEditing ? "Update failed" : "Upload failed", {
-              description: result.message || "An unexpected error occurred",
-              duration: 5000,
-            });
-        }
+      // Reset form if adding another
+      if (addAnother) {
+        resetForm();
       }
     } catch (error) {
+      // Errors are handled by the mutation hooks
       console.error("Error submitting question:", error);
-      toast.error("Unexpected error", {
-        description: `Failed to ${isEditing ? "update" : "upload"} question. Please try again.`,
-        duration: 5000,
-      });
-    } finally {
-      setIsLoading(false);
     }
   };
 

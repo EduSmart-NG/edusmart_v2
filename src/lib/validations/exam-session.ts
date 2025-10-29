@@ -1,5 +1,6 @@
 import { z } from "zod";
 import DOMPurify from "isomorphic-dompurify";
+
 const VIOLATION_TYPES = [
   "tab_switch",
   "window_blur",
@@ -68,7 +69,7 @@ export const completeExamSchema = z.object({
 export const trackViolationSchema = z.object({
   sessionId: z.string().cuid(),
   type: z.enum(VIOLATION_TYPES),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const syncTimeSchema = z.object({
