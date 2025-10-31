@@ -20,7 +20,7 @@ export const auth = betterAuth({
     provider: "mysql",
   }),
 
-  basePath: "/auth",
+  basePath: "api/v1/auth",
 
   secret: process.env.BETTER_AUTH_SECRET,
 
@@ -52,7 +52,8 @@ export const auth = betterAuth({
       endpoints: [
         "/sign-up/email",
         "/sign-in/email",
-        "/forget-password",
+        "/forgot-password",
+        "/reset-password",
         "/exam-session/access-check",
         "/exam-session/start",
         "/exam-session/status",
@@ -319,11 +320,12 @@ export const auth = betterAuth({
   },
 
   account: {
+    encryptOAuthTokens: true,
     accountLinking: {
       enabled: true,
       trustedProviders: ["google"],
       allowDifferentEmails: false,
-      updateUserInfoOnLink: true,
+      updateUserInfoOnLink: false,
       allowUnlinkingAll: false,
     },
   },
@@ -461,15 +463,17 @@ export const auth = betterAuth({
   },
 
   advanced: {
-    useSecureCookies: process.env.NODE_ENV === "production",
+    useSecureCookies: true,
     cookiePrefix: "edusmart",
+    disableCSRFCheck: false,
 
     crossSubDomainCookies: {
-      enabled: false,
+      enabled: true,
     },
 
     ipAddress: {
       ipAddressHeaders: ["x-forwarded-for", "x-real-ip", "cf-connecting-ip"],
+      disableIpTracking: false,
     },
 
     cookies: {
@@ -481,6 +485,7 @@ export const auth = betterAuth({
           httpOnly: true,
         },
       },
+
       session_data: {
         name: "session_data",
         attributes: {

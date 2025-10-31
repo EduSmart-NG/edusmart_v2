@@ -16,7 +16,7 @@ import type {
 } from "@/types/auth";
 import { ZodError } from "zod";
 import { APIError } from "better-auth/api";
-import { headers } from "next/headers"; // ✅ ADDED: Import headers for reCAPTCHA
+import { headers } from "next/headers"; //
 
 /**
  * Rate limiting configuration for password reset requests
@@ -148,6 +148,8 @@ async function recordPasswordResetAttempt(
 export async function requestPasswordReset(
   data: PasswordResetRequestInput
 ): Promise<PasswordResetRequestResult> {
+  const startTime = Date.now(); // ✅ Declare BEFORE try block
+
   try {
     // Step 1: Validate and sanitize input
     const validatedData = validateAndSanitizePasswordResetRequest(data);
@@ -161,7 +163,7 @@ export async function requestPasswordReset(
         message:
           "Too many password reset requests. Please try again in 15 minutes.",
         code: "RATE_LIMITED",
-        retryAfter: 900, // 15 minutes
+        retryAfter: 900,
       };
     }
 
@@ -182,30 +184,30 @@ export async function requestPasswordReset(
       select: { id: true, email: true, emailVerified: true },
     });
 
-    // Step 5: If user doesn't exist, still return success (security best practice)
-    if (!user) {
+    // Step 5 & 6: Send email ONLY if user exists
+    if (user) {
+      await auth.api.forgetPassword({
+        body: {
+          email,
+          redirectTo: "/auth/reset-password",
+        },
+        headers: await headers(),
+      });
+      console.log(`Password reset email sent to: ${email}`);
+    } else {
       console.log(`Password reset requested for non-existent email: ${email}`);
-      // Return success to prevent email enumeration
-      return {
-        success: true,
-        message:
-          "If an account exists with this email, you will receive password reset instructions.",
-        code: "EMAIL_SENT",
-      };
     }
 
-    // Step 6: Send password reset email via Better Auth
-    // ✅ UPDATED: Now passes headers for reCAPTCHA validation
-    await auth.api.forgetPassword({
-      body: {
-        email,
-        redirectTo: "/auth/reset-password",
-      },
-      headers: await headers(), // ✅ ADDED: Pass headers for reCAPTCHA validation
-    });
+    // ✅ Add consistent delay to prevent timing attacks
+    const elapsed = Date.now() - startTime;
+    const minimumDelay = 200; // Minimum response time in ms
+    if (elapsed < minimumDelay) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, minimumDelay - elapsed)
+      );
+    }
 
-    console.log(`Password reset email sent to: ${email}`);
-
+    // Always return the same message
     return {
       success: true,
       message:
@@ -224,11 +226,10 @@ export async function requestPasswordReset(
       };
     }
 
-    // ✅ ENHANCED: Handle Better Auth API errors including reCAPTCHA
+    // Handle Better Auth API errors including reCAPTCHA
     if (error instanceof APIError) {
       const errorMessage = error.message.toLowerCase();
 
-      // Check for reCAPTCHA-specific errors
       if (
         errorMessage.includes("captcha") ||
         errorMessage.includes("recaptcha")
@@ -241,7 +242,16 @@ export async function requestPasswordReset(
       }
 
       console.error("Better Auth API error:", error.message);
-      // Don't expose internal errors to client
+
+      // ✅ Apply timing consistency even on error
+      const elapsed = Date.now() - startTime;
+      const minimumDelay = 200;
+      if (elapsed < minimumDelay) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, minimumDelay - elapsed)
+        );
+      }
+
       return {
         success: true,
         message:
@@ -250,7 +260,15 @@ export async function requestPasswordReset(
       };
     }
 
-    // Generic error
+    // Generic error - also apply timing consistency
+    const elapsed = Date.now() - startTime;
+    const minimumDelay = 200;
+    if (elapsed < minimumDelay) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, minimumDelay - elapsed)
+      );
+    }
+
     return {
       success: false,
       message:

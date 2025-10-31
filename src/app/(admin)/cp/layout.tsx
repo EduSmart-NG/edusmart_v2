@@ -19,7 +19,7 @@ export default async function AdminLayout({
 
   // Check if user is authenticated
   if (!session) {
-    redirect("/auth/login?callbackUrl=/dashboard/admin/users");
+    redirect("/auth/login?redirectTo=/cp/admin-dashboard/");
   }
 
   const accessCheck = await verifyAdminAccess();

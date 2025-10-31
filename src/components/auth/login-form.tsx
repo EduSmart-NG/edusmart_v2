@@ -141,7 +141,7 @@ export function LoginForm({
 
         // Use callbackUrl from middleware, fallback to result.redirectTo or /dashboard
         const redirectPath = result.redirectTo || callbackUrl;
-        router.push(redirectPath);
+        router.replace(redirectPath);
         router.refresh();
       } else {
         // Handle different error types
