@@ -7,7 +7,6 @@ export default async function GeneralLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // Check if user is logged in
   const session = await auth.api.getSession({
     headers: await headers(),
   });
