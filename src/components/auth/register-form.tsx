@@ -28,6 +28,7 @@ import { NIGERIAN_STATES_AND_LGAS } from "@/lib/utils/nigerianStates";
 import { toast } from "sonner";
 import { OAuthButtons } from "./oauth-button";
 import Link from "next/link";
+import PhoneInput from "@/components/ui/phone-input";
 
 export function RegisterForm() {
   const router = useRouter();
@@ -155,7 +156,6 @@ export function RegisterForm() {
 
     const result = registerSchema.safeParse(formData);
     if (!result.success) {
-      // ✅ FIXED: Use .issues instead of .errors (Zod v4)
       result.error.issues.forEach((issue) => {
         if (issue.path[0]) {
           newErrors[issue.path[0].toString()] = issue.message;
@@ -378,15 +378,12 @@ export function RegisterForm() {
             <div className="grid md:grid-cols-2 gap-6">
               <div className="grid gap-3">
                 <Label htmlFor="phoneNumber">Phone Number (Optional)</Label>
-                <Input
+                <PhoneInput
                   id="phoneNumber"
-                  type="tel"
-                  placeholder="+2348123456789"
                   value={formData.phoneNumber}
-                  onChange={(e) =>
-                    handleInputChange("phoneNumber", e.target.value)
-                  }
+                  onChange={(value) => handleInputChange("phoneNumber", value)}
                   disabled={isLoading}
+                  defaultCountry="NG"
                 />
                 {errors.phoneNumber && (
                   <p className="text-xs text-red-500">{errors.phoneNumber}</p>

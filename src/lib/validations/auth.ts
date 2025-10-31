@@ -1,5 +1,6 @@
 import { z } from "zod";
 import DOMPurify from "isomorphic-dompurify";
+import { isValidPhoneNumber } from "libphonenumber-js";
 
 /**
  * Registration validation schema with enhanced username validation
@@ -66,7 +67,20 @@ export const registerSchema = z.object({
 
   phoneNumber: z
     .string()
-    .regex(/^\+?[1-9]\d{1,14}$/, "Invalid phone number format")
+    .refine(
+      (val) => {
+        // Empty string is valid (optional field)
+        if (!val || val === "") return true;
+
+        // Validate using libphonenumber-js
+        try {
+          return isValidPhoneNumber(val);
+        } catch {
+          return false;
+        }
+      },
+      { message: "Invalid phone number format" }
+    )
     .optional()
     .or(z.literal("")),
 
@@ -111,13 +125,14 @@ export function validateAndSanitizeRegistration(
     ...validated,
     name: DOMPurify.sanitize(validated.name.trim()),
     email: validated.email.toLowerCase().trim(),
-    username: DOMPurify.sanitize(validated.username.trim()), // Preserve original casing
+    username: DOMPurify.sanitize(validated.username.trim()),
     address: validated.address
       ? DOMPurify.sanitize(validated.address.trim())
       : undefined,
     schoolName: validated.schoolName
       ? DOMPurify.sanitize(validated.schoolName.trim())
       : undefined,
+    phoneNumber: validated.phoneNumber || undefined,
   };
 }
 
